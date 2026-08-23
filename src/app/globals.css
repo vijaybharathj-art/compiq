@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------- */
+/* Tattava design tokens — see DESIGN_SYSTEM.md.                          */
+/* Dark is the default, most-polished theme; .light overrides below.     */
+/* ---------------------------------------------------------------------- */
+
+:root {
+  --background: #0a0b0d;
+  --surface: #111318;
+  --surface-raised: #161920;
+  --border: #22262f;
+  --border-subtle: #1a1d24;
+  --foreground: #e8e9eb;
+  --muted-foreground: #8b8f99;
+  --accent: #5b6cff;
+  --accent-foreground: #ffffff;
+  --positive: #3ecf8e;
+  --warning: #e8a53d;
+  --negative: #ef5b5b;
+  --gold: #d4af6a;
+
+  --radius: 0.5rem;
+  --card: var(--surface);
+  --card-foreground: var(--foreground);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--foreground);
+  --primary: var(--accent);
+  --primary-foreground: var(--accent-foreground);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--foreground);
+  --muted: var(--surface-raised);
+  --destructive: var(--negative);
+  --input: var(--border);
+  --ring: var(--accent);
+}
+
+.light {
+  --background: #f7f7f5;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: #e4e4e0;
+  --border-subtle: #ececea;
+  --foreground: #16181c;
+  --muted-foreground: #6b6f76;
+  --accent: #4148d9;
+  --accent-foreground: #ffffff;
+  --positive: #0e9f6e;
+  --warning: #b5750b;
+  --negative: #d13c3c;
+  --gold: #a5792a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-positive: var(--positive);
+  --color-warning: var(--warning);
+  --color-negative: var(--negative);
+  --color-gold: var(--gold);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-destructive: var(--destructive);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --animate-fade-in: fade-in 180ms ease-out;
+  --animate-slide-up: slide-up 180ms ease-out;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: dark;
+  }
+  html.light {
+    color-scheme: light;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings:
+      "cv02", "cv03", "cv04", "cv11";
+  }
+}
+
+@layer utilities {
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+}

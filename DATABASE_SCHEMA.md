@@ -1,0 +1,142 @@
+# Tattava — Database Schema Reference
+
+Source of truth for structure is `prisma/schema.prisma`. This document is
+the human-readable map of it, kept in sync manually whenever the schema
+changes.
+
+## Conventions
+
+- Primary keys: `String @id @default(cuid())`.
+- Multi-tenancy: every tenant-scoped table carries `organizationId` with an
+  index; repositories must always filter by it.
+- Money: `valueMinorUnits BigInt` + `currency String` (ISO 4217), never
+  `Float`.
+- Timestamps: `createdAt DateTime @default(now())`, `updatedAt DateTime @updatedAt`.
+- Soft state over hard deletes for anything with audit relevance (tasks,
+  deals) via a `status`/`dismissedAt` field; hard deletes are reserved for
+  genuinely transient rows.
+
+## Entity groups
+
+### Identity & tenancy
+- **User** — id, email, name, image, authProvider, createdAt.
+- **Organization** — id, name, slug, plan, createdAt.
+- **OrganizationMember** — userId, organizationId, role (`OWNER | ADMIN |
+  BANKER | ANALYST | VIEWER`), team (`MA | ECM | DCM | LEV_FIN |
+  RESTRUCTURING | PRIVATE_CAPITAL | ADVISORY`), joinedAt.
+
+### CRM core
+- **Client** — organizationId, name, relationshipStatus (`ACTIVE |
+  DORMANT | PROSPECT | FORMER`), sectorId, primaryBankerId, foundedYear,
+  headquarters, website, createdAt.
+- **Company** — organizationId, name, sectorId, description, website,
+  isClient (bool) — represents counterparties/targets/investors as well as
+  the client's own operating entity when distinct from `Client`.
+- **Contact** — clientId, name, title, email, phone, isKeyContact.
+- **Sector** — id, name (GICS-style sector taxonomy).
+
+### Deal core
+- **Deal** — the central object (see field list below).
+- **DealWorkflow** — organizationId (nullable = system default),
+  bankingService, name — one ordered workflow per service.
+- **DealStageDefinition** — workflowId, key, label, sortOrder — the
+  service-specific stage list (Origination, Pitch, Mandate, … per
+  `PRODUCT_SPEC.md` §7).
+- **DealParticipant** — dealId, companyId, role (`BUYER | SELLER |
+  INVESTOR | LENDER | LAW_FIRM | ACCOUNTANT | TARGET | ADVISOR_OTHER`).
+- **DealTeamMember** — dealId, userId, role (`LEAD_BANKER | MD | VP |
+  ASSOCIATE | ANALYST`), allocationNote.
+- **BankingService** — id, name, code (M&A, ECM, DCM, Leveraged Finance,
+  Restructuring, Private Capital, Financial Advisory, Strategic Advisory,
+  Valuation, Other).
+- **DealEvent** — dealId, type (`STAGE_CHANGE | VALUE_CHANGE |
+  PARTICIPANT_ADDED | RISK_FLAGGED | MILESTONE | NOTE`), previousValue,
+  newValue, occurredAt, sourceEmailId?, aiExtractionId? — powers the
+  Deal Timeline.
+
+### Deal object — full field list (`Deal` model)
+
+id, organizationId, projectCodename, clientId, companyId (target/subject
+company), sectorId, geography, bankingServiceId, dealType (enum, §6 of
+PRODUCT_SPEC), side (`BUY_SIDE | SELL_SIDE | N_A`), valueMinorUnits,
+currency, enterpriseValueMinorUnits, equityValueMinorUnits, workflowId,
+currentStageId, previousStageId, mandateStatus (`NOT_MANDATED | MANDATED |
+CO_MANDATED | LOST`), probabilityPercent, leadBankerId, createdAt,
+lastActivityAt, nextMilestone, nextMilestoneDate, expectedCloseDate,
+priority (`LOW | MEDIUM | HIGH | CRITICAL`), riskStatus (`ON_TRACK |
+WATCH | AT_RISK`), aiConfidencePercent (rolling confidence in the record's
+current AI-maintained fields).
+
+Relations: `client`, `company`, `sector`, `bankingService`, `workflow`,
+`currentStage`, `previousStage`, `leadBanker`, `team[]` (DealTeamMember),
+`participants[]` (DealParticipant), `tasks[]`, `documents[]`, `meetings[]`,
+`events[]`, `aiExtractions[]`, `opportunities[]` (if the deal originated
+from one).
+
+### Email intelligence
+- **EmailAccount** — organizationId, userId, provider (`GMAIL |
+  OUTLOOK`), emailAddress, connectionStatus, scopesGranted, lastSyncedAt.
+- **EmailThread** — emailAccountId, providerThreadId, subject,
+  participantSummary, dealId? (matched), lastMessageAt.
+- **Email** — threadId, providerMessageId, fromAddress, toAddresses[],
+  ccAddresses[], subject, bodyText, receivedAt, relevance (`IB_RELEVANT |
+  POSSIBLY_RELEVANT | NOT_RELEVANT`), relevanceScore.
+- **EmailAttachment** — emailId, filename, mimeType, sizeBytes,
+  storageRef.
+
+### AI extraction & evidence
+- **AiExtraction** — emailId, dealId? (matched deal, nullable pre-match),
+  extractedFields (JSON — client, deal type, value, currency, stage,
+  action, timeline, etc.), confidencePercent, matchType (`EXISTING_DEAL |
+  NEW_DEAL_EXISTING_CLIENT | NEW_CLIENT | POTENTIAL_OPPORTUNITY |
+  UNKNOWN`), appliedStatus (`AUTO_APPLIED | SUGGESTED_PENDING | ACCEPTED |
+  REJECTED | INFO_ONLY`), createdAt.
+- **AiExtractionEvidence** — extractionId, emailId, quotedExcerpt,
+  senderName, sentAt — what renders in the evidence popover.
+
+### Work
+- **Task** — organizationId, dealId?, clientId?, title, description,
+  ownerId, priority, dueDate, status (`TODO | IN_PROGRESS | COMPLETED |
+  DISMISSED`), sourceEmailId?, aiConfidencePercent?, createdAt.
+- **Document** — dealId, name, category, storageRef, uploadedById,
+  createdAt.
+- **Meeting** — dealId, title, startsAt, endsAt, attendees[], location,
+  sourceEmailId?.
+- **Opportunity** — organizationId, clientId, potentialService
+  (BankingService), signalText, confidencePercent, recommendedAction,
+  status (`NEW | ACKNOWLEDGED | CONVERTED_TO_DEAL | DISMISSED`),
+  sourceEmailId, createdAt.
+
+### Platform
+- **Notification** — userId, type, title, body, readAt, linkHref,
+  createdAt.
+- **AuditLog** — organizationId, actorUserId?, action, entityType,
+  entityId, metadata (JSON), createdAt — every AI auto-apply and every
+  Accept/Reject also writes here.
+
+## Relationship diagram (textual)
+
+```
+Organization 1—* OrganizationMember *—1 User
+Organization 1—* Client 1—* Deal *—1 Company (target)
+Deal *—1 BankingService
+Deal *—1 DealWorkflow 1—* DealStageDefinition
+Deal 1—* DealParticipant *—1 Company
+Deal 1—* DealTeamMember *—1 User
+Deal 1—* DealEvent
+Deal 1—* Task
+Deal 1—* AiExtraction 1—* AiExtractionEvidence
+EmailAccount 1—* EmailThread 1—* Email 1—* EmailAttachment
+Email 1—* AiExtraction
+Client 1—* Opportunity
+```
+
+## Why Prisma 7 specifics matter here
+
+Prisma 7 generates an ESM client (`generator client { provider =
+"prisma-client" }`) into `src/generated/prisma` and requires an explicit
+driver adapter (`@prisma/adapter-pg`) — there is no bundled query engine
+binary being auto-selected the way Prisma 5/6 worked. `prisma.config.ts`
+(not `package.json`) drives the CLI. This is documented here because it is
+a frequent source of stale assumptions when generating code against this
+schema.

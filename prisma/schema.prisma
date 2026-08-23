@@ -1,0 +1,735 @@
+// Tattava — production database schema.
+// See DATABASE_SCHEMA.md for the human-readable reference.
+// Prisma 7: generator emits an ESM client; the app connects via an explicit
+// driver adapter (@prisma/adapter-pg) — see src/lib/db.ts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Identity & tenancy
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String           @id @default(cuid())
+  email        String           @unique
+  name         String?
+  image        String?
+  authProvider AuthProviderType
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  memberships       OrganizationMember[]
+  leadDeals         Deal[]               @relation("DealLeadBanker")
+  dealTeamRoles     DealTeamMember[]
+  ownedTasks        Task[]
+  uploadedDocuments Document[]
+  notifications     Notification[]
+  auditLogEntries   AuditLog[]
+  emailAccounts     EmailAccount[]
+  sessions          Session[]
+  accounts          Account[]
+
+  @@map("users")
+}
+
+enum AuthProviderType {
+  GOOGLE
+  MICROSOFT
+}
+
+// NextAuth (Auth.js) adapter tables — database session strategy.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Organization {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("trial")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members       OrganizationMember[]
+  clients       Client[]
+  companies     Company[]
+  deals         Deal[]
+  dealWorkflows DealWorkflow[]
+  tasks         Task[]
+  opportunities Opportunity[]
+  emailAccounts EmailAccount[]
+  auditLogs     AuditLog[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  role           OrgRole      @default(BANKER)
+  team           BankingTeam?
+  joinedAt       DateTime     @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+enum OrgRole {
+  OWNER
+  ADMIN
+  BANKER
+  ANALYST
+  VIEWER
+}
+
+enum BankingTeam {
+  MA
+  ECM
+  DCM
+  LEVERAGED_FINANCE
+  RESTRUCTURING
+  PRIVATE_CAPITAL
+  ADVISORY
+}
+
+// ---------------------------------------------------------------------------
+// CRM core
+// ---------------------------------------------------------------------------
+
+model Sector {
+  id   String @id @default(cuid())
+  name String @unique
+
+  clients   Client[]
+  companies Company[]
+  deals     Deal[]
+
+  @@map("sectors")
+}
+
+model Client {
+  id                 String             @id @default(cuid())
+  organizationId     String
+  name               String
+  relationshipStatus ClientRelationship @default(PROSPECT)
+  sectorId           String?
+  primaryBankerId    String?
+  headquarters       String?
+  website            String?
+  foundedYear        Int?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sector        Sector?       @relation(fields: [sectorId], references: [id])
+  contacts      Contact[]
+  deals         Deal[]
+  tasks         Task[]
+  opportunities Opportunity[]
+  emailThreads  EmailThread[]
+
+  @@index([organizationId])
+  @@map("clients")
+}
+
+enum ClientRelationship {
+  ACTIVE
+  DORMANT
+  PROSPECT
+  FORMER
+}
+
+model Company {
+  id             String   @id @default(cuid())
+  organizationId String
+  name           String
+  sectorId       String?
+  description    String?
+  website        String?
+  isClientEntity Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization  Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sector        Sector?           @relation(fields: [sectorId], references: [id])
+  dealsAsTarget Deal[]            @relation("DealTargetCompany")
+  participants  DealParticipant[]
+
+  @@index([organizationId])
+  @@map("companies")
+}
+
+model Contact {
+  id           String  @id @default(cuid())
+  clientId     String
+  name         String
+  title        String?
+  email        String?
+  phone        String?
+  isKeyContact Boolean @default(false)
+
+  client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  @@index([clientId])
+  @@map("contacts")
+}
+
+// ---------------------------------------------------------------------------
+// Deal core
+// ---------------------------------------------------------------------------
+
+model BankingService {
+  id   String @id @default(cuid())
+  code String @unique // MA, ECM, DCM, LEV_FIN, RESTRUCTURING, PRIVATE_CAPITAL, FINANCIAL_ADVISORY, STRATEGIC_ADVISORY, VALUATION, OTHER
+  name String
+
+  deals         Deal[]
+  workflows     DealWorkflow[]
+  opportunities Opportunity[]
+
+  @@map("banking_services")
+}
+
+model DealWorkflow {
+  id               String  @id @default(cuid())
+  organizationId   String? // null = system default workflow for the service
+  bankingServiceId String
+  name             String
+
+  organization   Organization?         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bankingService BankingService        @relation(fields: [bankingServiceId], references: [id])
+  stages         DealStageDefinition[]
+  deals          Deal[]
+
+  @@index([bankingServiceId])
+  @@map("deal_workflows")
+}
+
+model DealStageDefinition {
+  id         String @id @default(cuid())
+  workflowId String
+  key        String // e.g. "management_meetings"
+  label      String // e.g. "Management Meetings"
+  sortOrder  Int
+
+  workflow      DealWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  dealsCurrent  Deal[]       @relation("DealCurrentStage")
+  dealsPrevious Deal[]       @relation("DealPreviousStage")
+
+  @@unique([workflowId, key])
+  @@index([workflowId])
+  @@map("deal_stage_definitions")
+}
+
+model Deal {
+  id                        String        @id @default(cuid())
+  organizationId            String
+  projectCodename           String
+  clientId                  String
+  targetCompanyId           String?
+  sectorId                  String?
+  geography                 String?
+  bankingServiceId          String
+  dealType                  DealType
+  side                      DealSide      @default(N_A)
+  valueMinorUnits           BigInt?
+  currency                  String        @default("USD")
+  enterpriseValueMinorUnits BigInt?
+  equityValueMinorUnits     BigInt?
+  workflowId                String
+  currentStageId            String
+  previousStageId           String?
+  mandateStatus             MandateStatus @default(NOT_MANDATED)
+  probabilityPercent        Int?
+  leadBankerId              String?
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+  lastActivityAt            DateTime      @default(now())
+  nextMilestone             String?
+  nextMilestoneDate         DateTime?
+  expectedCloseDate         DateTime?
+  priority                  DealPriority  @default(MEDIUM)
+  riskStatus                RiskStatus    @default(ON_TRACK)
+  aiConfidencePercent       Int?
+  originatingOpportunityId  String?       @unique
+
+  organization           Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client                 Client               @relation(fields: [clientId], references: [id])
+  targetCompany          Company?             @relation("DealTargetCompany", fields: [targetCompanyId], references: [id])
+  sector                 Sector?              @relation(fields: [sectorId], references: [id])
+  bankingService         BankingService       @relation(fields: [bankingServiceId], references: [id])
+  workflow               DealWorkflow         @relation(fields: [workflowId], references: [id])
+  currentStage           DealStageDefinition  @relation("DealCurrentStage", fields: [currentStageId], references: [id])
+  previousStage          DealStageDefinition? @relation("DealPreviousStage", fields: [previousStageId], references: [id])
+  leadBanker             User?                @relation("DealLeadBanker", fields: [leadBankerId], references: [id])
+  originatingOpportunity Opportunity?         @relation(fields: [originatingOpportunityId], references: [id])
+
+  team          DealTeamMember[]
+  participants  DealParticipant[]
+  events        DealEvent[]
+  tasks         Task[]
+  documents     Document[]
+  meetings      Meeting[]
+  aiExtractions AiExtraction[]
+  emailThreads  EmailThread[]
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@index([currentStageId])
+  @@map("deals")
+}
+
+enum DealType {
+  BUY_SIDE_MA
+  SELL_SIDE_MA
+  MERGER
+  ACQUISITION
+  DIVESTITURE
+  TAKE_PRIVATE
+  IPO
+  FOLLOW_ON
+  RIGHTS_ISSUE
+  CONVERTIBLE
+  BOND_ISSUANCE
+  PRIVATE_PLACEMENT
+  ACQUISITION_FINANCING
+  REFINANCING
+  LEVERAGED_BUYOUT
+  RESTRUCTURING
+  JOINT_VENTURE
+  STRATEGIC_INVESTMENT
+  OTHER
+}
+
+enum DealSide {
+  BUY_SIDE
+  SELL_SIDE
+  N_A
+}
+
+enum MandateStatus {
+  NOT_MANDATED
+  MANDATED
+  CO_MANDATED
+  LOST
+}
+
+enum DealPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum RiskStatus {
+  ON_TRACK
+  WATCH
+  AT_RISK
+}
+
+model DealParticipant {
+  id        String              @id @default(cuid())
+  dealId    String
+  companyId String
+  role      DealParticipantRole
+
+  deal    Deal    @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  company Company @relation(fields: [companyId], references: [id])
+
+  @@index([dealId])
+  @@map("deal_participants")
+}
+
+enum DealParticipantRole {
+  BUYER
+  SELLER
+  INVESTOR
+  LENDER
+  LAW_FIRM
+  ACCOUNTANT
+  TARGET
+  ADVISOR_OTHER
+}
+
+model DealTeamMember {
+  id             String       @id @default(cuid())
+  dealId         String
+  userId         String
+  role           DealTeamRole
+  allocationNote String?
+
+  deal Deal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([dealId, userId])
+  @@map("deal_team_members")
+}
+
+enum DealTeamRole {
+  LEAD_BANKER
+  MD
+  VP
+  ASSOCIATE
+  ANALYST
+}
+
+model DealEvent {
+  id             String        @id @default(cuid())
+  dealId         String
+  type           DealEventType
+  previousValue  String?
+  newValue       String?
+  occurredAt     DateTime      @default(now())
+  sourceEmailId  String?
+  aiExtractionId String?
+  note           String?
+
+  deal         Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sourceEmail  Email?        @relation(fields: [sourceEmailId], references: [id])
+  aiExtraction AiExtraction? @relation(fields: [aiExtractionId], references: [id])
+
+  @@index([dealId])
+  @@map("deal_events")
+}
+
+enum DealEventType {
+  STAGE_CHANGE
+  VALUE_CHANGE
+  PARTICIPANT_ADDED
+  RISK_FLAGGED
+  MILESTONE
+  NOTE
+}
+
+// ---------------------------------------------------------------------------
+// Email intelligence
+// ---------------------------------------------------------------------------
+
+model EmailAccount {
+  id               String                @id @default(cuid())
+  organizationId   String
+  userId           String
+  provider         EmailProviderType
+  emailAddress     String
+  connectionStatus EmailConnectionStatus @default(CONNECTED)
+  scopesGranted    String[]
+  lastSyncedAt     DateTime?
+  createdAt        DateTime              @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  threads      EmailThread[]
+
+  @@unique([userId, emailAddress])
+  @@index([organizationId])
+  @@map("email_accounts")
+}
+
+enum EmailProviderType {
+  GMAIL
+  OUTLOOK
+}
+
+enum EmailConnectionStatus {
+  CONNECTED
+  NEEDS_REAUTH
+  DISCONNECTED
+}
+
+model EmailThread {
+  id                 String   @id @default(cuid())
+  emailAccountId     String
+  providerThreadId   String
+  subject            String
+  participantSummary String?
+  dealId             String?
+  clientId           String?
+  lastMessageAt      DateTime
+
+  emailAccount EmailAccount @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
+  deal         Deal?        @relation(fields: [dealId], references: [id])
+  client       Client?      @relation(fields: [clientId], references: [id])
+  emails       Email[]
+
+  @@unique([emailAccountId, providerThreadId])
+  @@index([dealId])
+  @@map("email_threads")
+}
+
+model Email {
+  id                String         @id @default(cuid())
+  threadId          String
+  providerMessageId String
+  fromAddress       String
+  fromName          String?
+  toAddresses       String[]
+  ccAddresses       String[]
+  subject           String
+  bodyText          String         @db.Text
+  receivedAt        DateTime
+  relevance         EmailRelevance @default(NOT_RELEVANT)
+  relevanceScore    Float?
+
+  thread        EmailThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments   EmailAttachment[]
+  aiExtractions AiExtraction[]
+  dealEvents    DealEvent[]
+  tasks         Task[]
+  meetings      Meeting[]
+  opportunities Opportunity[]
+
+  @@unique([threadId, providerMessageId])
+  @@index([threadId])
+  @@map("emails")
+}
+
+enum EmailRelevance {
+  IB_RELEVANT
+  POSSIBLY_RELEVANT
+  NOT_RELEVANT
+}
+
+model EmailAttachment {
+  id         String @id @default(cuid())
+  emailId    String
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  storageRef String
+
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@index([emailId])
+  @@map("email_attachments")
+}
+
+// ---------------------------------------------------------------------------
+// AI extraction & evidence
+// ---------------------------------------------------------------------------
+
+model AiExtraction {
+  id                String                  @id @default(cuid())
+  emailId           String
+  dealId            String?
+  extractedFields   Json
+  confidencePercent Int
+  matchType         DealMatchType
+  appliedStatus     ExtractionAppliedStatus @default(INFO_ONLY)
+  createdAt         DateTime                @default(now())
+
+  email      Email                  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  deal       Deal?                  @relation(fields: [dealId], references: [id])
+  evidence   AiExtractionEvidence[]
+  dealEvents DealEvent[]
+
+  @@index([emailId])
+  @@index([dealId])
+  @@map("ai_extractions")
+}
+
+enum DealMatchType {
+  EXISTING_DEAL
+  NEW_DEAL_EXISTING_CLIENT
+  NEW_CLIENT
+  POTENTIAL_OPPORTUNITY
+  UNKNOWN
+}
+
+enum ExtractionAppliedStatus {
+  AUTO_APPLIED
+  SUGGESTED_PENDING
+  ACCEPTED
+  REJECTED
+  INFO_ONLY
+}
+
+model AiExtractionEvidence {
+  id            String   @id @default(cuid())
+  extractionId  String
+  emailId       String
+  quotedExcerpt String   @db.Text
+  senderName    String
+  sentAt        DateTime
+
+  extraction AiExtraction @relation(fields: [extractionId], references: [id], onDelete: Cascade)
+
+  @@index([extractionId])
+  @@map("ai_extraction_evidence")
+}
+
+// ---------------------------------------------------------------------------
+// Work
+// ---------------------------------------------------------------------------
+
+model Task {
+  id                  String       @id @default(cuid())
+  organizationId      String
+  dealId              String?
+  clientId            String?
+  title               String
+  description         String?
+  ownerId             String?
+  priority            DealPriority @default(MEDIUM)
+  dueDate             DateTime?
+  status              TaskStatus   @default(TODO)
+  sourceEmailId       String?
+  aiConfidencePercent Int?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deal         Deal?        @relation(fields: [dealId], references: [id])
+  client       Client?      @relation(fields: [clientId], references: [id])
+  owner        User?        @relation(fields: [ownerId], references: [id])
+  sourceEmail  Email?       @relation(fields: [sourceEmailId], references: [id])
+
+  @@index([organizationId])
+  @@index([dealId])
+  @@map("tasks")
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  COMPLETED
+  DISMISSED
+}
+
+model Document {
+  id           String   @id @default(cuid())
+  dealId       String
+  name         String
+  category     String?
+  storageRef   String
+  uploadedById String?
+  createdAt    DateTime @default(now())
+
+  deal       Deal  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  uploadedBy User? @relation(fields: [uploadedById], references: [id])
+
+  @@index([dealId])
+  @@map("documents")
+}
+
+model Meeting {
+  id            String    @id @default(cuid())
+  dealId        String
+  title         String
+  startsAt      DateTime
+  endsAt        DateTime?
+  attendees     String[]
+  location      String?
+  sourceEmailId String?
+
+  deal        Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sourceEmail Email? @relation(fields: [sourceEmailId], references: [id])
+
+  @@index([dealId])
+  @@map("meetings")
+}
+
+model Opportunity {
+  id                 String            @id @default(cuid())
+  organizationId     String
+  clientId           String
+  potentialServiceId String
+  signalText         String
+  confidencePercent  Int
+  recommendedAction  String
+  status             OpportunityStatus @default(NEW)
+  sourceEmailId      String?
+  createdAt          DateTime          @default(now())
+
+  organization     Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  client           Client         @relation(fields: [clientId], references: [id])
+  potentialService BankingService @relation(fields: [potentialServiceId], references: [id])
+  sourceEmail      Email?         @relation(fields: [sourceEmailId], references: [id])
+  convertedDeal    Deal?
+
+  @@index([organizationId])
+  @@index([clientId])
+  @@map("opportunities")
+}
+
+enum OpportunityStatus {
+  NEW
+  ACKNOWLEDGED
+  CONVERTED_TO_DEAL
+  DISMISSED
+}
+
+// ---------------------------------------------------------------------------
+// Platform
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  title     String
+  body      String?
+  linkHref  String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  organizationId String
+  actorUserId    String?
+  action         String
+  entityType     String
+  entityId       String
+  metadata       Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorUserId], references: [id])
+
+  @@index([organizationId])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

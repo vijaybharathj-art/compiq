@@ -1,0 +1,155 @@
+import type { Client } from "@/types/domain";
+
+export const clients: Client[] = [
+  {
+    id: "client-acme",
+    name: "Acme Industries",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-industrials",
+    headquarters: "Chicago, IL",
+    website: "acmeindustries.example",
+    foundedYear: 1974,
+    primaryBankerId: "banker-schen",
+    lastInteractionAt: "2026-08-23T14:10:00Z",
+    contacts: [
+      {
+        id: "contact-acme-1",
+        name: "Robert Hayes",
+        title: "Chief Executive Officer",
+        email: "r.hayes@acmeindustries.example",
+        isKeyContact: true,
+      },
+      {
+        id: "contact-acme-2",
+        name: "Linda Marsh",
+        title: "Chief Financial Officer",
+        email: "l.marsh@acmeindustries.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-meridian",
+    name: "Meridian Health",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-healthcare",
+    headquarters: "Minneapolis, MN",
+    website: "meridianhealth.example",
+    foundedYear: 1988,
+    primaryBankerId: "banker-schen",
+    lastInteractionAt: "2026-08-14T09:30:00Z",
+    contacts: [
+      {
+        id: "contact-meridian-1",
+        name: "Dana Whitcombe",
+        title: "Chief Financial Officer",
+        email: "d.whitcombe@meridianhealth.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-vantage",
+    name: "Vantage Retail Group",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-consumer",
+    headquarters: "Atlanta, GA",
+    website: "vantageretail.example",
+    foundedYear: 1996,
+    primaryBankerId: "banker-mwebb",
+    lastInteractionAt: "2026-08-22T18:05:00Z",
+    contacts: [
+      {
+        id: "contact-vantage-1",
+        name: "Michael Osei",
+        title: "Chief Restructuring Officer",
+        email: "m.osei@vantageretail.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-solace",
+    name: "Solace Renewables",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-energy",
+    headquarters: "Austin, TX",
+    website: "solacerenewables.example",
+    foundedYear: 2011,
+    primaryBankerId: "banker-panand",
+    lastInteractionAt: "2026-08-23T11:00:00Z",
+    contacts: [
+      {
+        id: "contact-solace-1",
+        name: "Grace Kim",
+        title: "Chief Executive Officer",
+        email: "g.kim@solacerenewables.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-nimbus",
+    name: "Nimbus Logistics",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-logistics",
+    headquarters: "Denver, CO",
+    website: "nimbuslogistics.example",
+    foundedYear: 2005,
+    primaryBankerId: "banker-etorres",
+    lastInteractionAt: "2026-08-20T16:40:00Z",
+    contacts: [
+      {
+        id: "contact-nimbus-1",
+        name: "Carlos Reyes",
+        title: "Chief Financial Officer",
+        email: "c.reyes@nimbuslogistics.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-halcyon",
+    name: "Halcyon Materials",
+    relationshipStatus: "PROSPECT",
+    sectorId: "sec-materials",
+    headquarters: "Pittsburgh, PA",
+    website: "halcyonmaterials.example",
+    foundedYear: 1962,
+    primaryBankerId: "banker-jwhitfield",
+    lastInteractionAt: "2026-08-21T13:20:00Z",
+    contacts: [
+      {
+        id: "contact-halcyon-1",
+        name: "Owen Prescott",
+        title: "Chief Financial Officer",
+        email: "o.prescott@halcyonmaterials.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-brightline",
+    name: "Brightline Fintech",
+    relationshipStatus: "FORMER",
+    sectorId: "sec-technology",
+    headquarters: "San Francisco, CA",
+    website: "brightlinefintech.example",
+    foundedYear: 2015,
+    primaryBankerId: "banker-panand",
+    lastInteractionAt: "2025-11-02T10:00:00Z",
+    contacts: [
+      {
+        id: "contact-brightline-1",
+        name: "Fatima Noor",
+        title: "Chief Executive Officer",
+        email: "f.noor@brightlinefintech.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+];
+
+export function getClient(id: string) {
+  return clients.find((c) => c.id === id);
+}
