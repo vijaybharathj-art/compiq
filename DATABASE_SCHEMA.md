@@ -70,7 +70,9 @@ currentStageId, previousStageId, mandateStatus (`NOT_MANDATED | MANDATED |
 CO_MANDATED | LOST`), probabilityPercent, leadBankerId, createdAt,
 lastActivityAt, nextMilestone, nextMilestoneDate, expectedCloseDate,
 priority (`LOW | MEDIUM | HIGH | CRITICAL`), riskStatus (`ON_TRACK |
-WATCH | AT_RISK`), aiConfidencePercent (rolling confidence in the record's
+WATCH | AT_RISK`), riskNote? (the human-readable signal behind
+`riskStatus`, e.g. what the pipeline's risk-detection stage matched —
+Phase 3), aiConfidencePercent (rolling confidence in the record's
 current AI-maintained fields).
 
 Relations: `client`, `company`, `sector`, `bankingService`, `workflow`,
@@ -80,38 +82,71 @@ Relations: `client`, `company`, `sector`, `bankingService`, `workflow`,
 from one).
 
 ### Email intelligence
+
+Full pipeline behavior that reads/writes these tables:
+`PHASE3_EMAIL_INTELLIGENCE.md`.
+
 - **EmailAccount** — organizationId, userId, provider (`GMAIL |
   OUTLOOK`), emailAddress, connectionStatus, scopesGranted, lastSyncedAt.
 - **EmailThread** — emailAccountId, providerThreadId, subject,
-  participantSummary, dealId? (matched), lastMessageAt.
+  participantSummary, dealId? (matched), clientId?, lastMessageAt.
 - **Email** — threadId, providerMessageId, fromAddress, toAddresses[],
   ccAddresses[], subject, bodyText, receivedAt, relevance (`IB_RELEVANT |
-  POSSIBLY_RELEVANT | NOT_RELEVANT`), relevanceScore.
+  POSSIBLY_RELEVANT | NOT_RELEVANT`), relevanceScore, processingStatus
+  (`PENDING | PROCESSING | PROCESSED | PROCESSING_FAILED` — Phase 3;
+  `PENDING` is the "Run Scan" backlog), processingError?, processedAt?,
+  processingJobId?.
 - **EmailAttachment** — emailId, filename, mimeType, sizeBytes,
   storageRef.
+- **EmailParticipant** *(Phase 3)* — emailId, address, name?, role (`FROM |
+  TO | CC | BCC`), contactId? (resolved `Contact`), bankerId? (resolved
+  `User`) — the strongest signal client/deal matching uses.
+- **EmailClassification** *(Phase 3)* — emailId (unique), label (same enum
+  as `Email.relevance`), confidence (0–1), reason, promptVersion,
+  createdAt. `Email.relevance`/`relevanceScore` stay denormalized for fast
+  reads; this is the durable, versioned "why."
+- **EmailProcessingJob** *(Phase 3)* — id, displayId (unique, e.g.
+  `SCAN-20260824-001`), organizationId, status (`QUEUED | RUNNING |
+  COMPLETED | FAILED`), triggeredById?, stage? (current pipeline stage
+  name), totalEmails/processedCount/relevantCount/dealsUpdated/
+  tasksCreated/opportunitiesCreated/risksDetected/suggestionsForReview
+  (all Int), errorMessage?, startedAt?, finishedAt?, createdAt. One row per
+  "Run Scan" invocation — the unit of observability and retry.
+- **EmailProcessingLog** *(Phase 3)* — jobId, emailId?, stage, level, message,
+  createdAt. Metadata-only (never full email bodies/tokens/credentials).
 
 ### AI extraction & evidence
 - **AiExtraction** — emailId, dealId? (matched deal, nullable pre-match),
-  extractedFields (JSON — client, deal type, value, currency, stage,
-  action, timeline, etc.), confidencePercent, matchType (`EXISTING_DEAL |
-  NEW_DEAL_EXISTING_CLIENT | NEW_CLIENT | POTENTIAL_OPPORTUNITY |
-  UNKNOWN`), appliedStatus (`AUTO_APPLIED | SUGGESTED_PENDING | ACCEPTED |
-  REJECTED | INFO_ONLY`), createdAt.
+  extractedFields (JSON, validated against `ExtractionResultSchema` before
+  the row is written — Phase 3 §3), confidencePercent, matchType
+  (`EXISTING_DEAL | NEW_DEAL_EXISTING_CLIENT | NEW_CLIENT |
+  POTENTIAL_OPPORTUNITY | UNKNOWN`), appliedStatus (`AUTO_APPLIED |
+  SUGGESTED_PENDING | ACCEPTED | REJECTED | INFO_ONLY`), promptVersion?,
+  processingJobId? (Phase 3 — non-null only for rows the live pipeline
+  wrote, distinguishing them from Phase 1's historical backfill rows),
+  createdAt. One row per detected change (not per email) — see
+  ARCHITECTURE.md §2.13.
 - **AiExtractionEvidence** — extractionId, emailId, quotedExcerpt,
-  senderName, sentAt — what renders in the evidence popover.
+  senderName, sentAt — what renders in the evidence popover/dialog.
 - **IntelligenceEvent** — organizationId, category (`DEAL_CHANGE |
-  CLIENT_ACTIVITY | TASK | OPPORTUNITY | RISK | IMPORTANT_EMAIL`), dealId?,
-  clientId?, headline, detail?, deltaFrom?/deltaTo?, confidencePercent?,
-  sourceEmailId?, aiExtractionId?, reviewStatus (`NEW | REVIEWED |
-  DISMISSED`), occurredAt, createdAt. Backs the Intelligence Feed and
-  dashboard "Today's Intelligence" as first-class rows (not a computed
-  view) so Mark-reviewed/Dismiss actions have something to persist against.
-  Added in Phase 1 alongside the live database — see ARCHITECTURE.md §2.8.
+  CLIENT_ACTIVITY | TASK | OPPORTUNITY | RISK | IMPORTANT_EMAIL`),
+  eventType? (finer-grained `IntelligenceEventType` — Phase 3, e.g.
+  `DEAL_VALUE_CHANGED`/`STAGE_CHANGED`/`RISK_DETECTED`; maps many-to-one
+  onto `category`), dealId?, clientId?, headline, detail?,
+  deltaFrom?/deltaTo?, confidencePercent?, sourceEmailId?, aiExtractionId?,
+  processingJobId?, reviewStatus (`NEW | REVIEWED | DISMISSED`),
+  occurredAt, createdAt. Backs the Intelligence Feed and dashboard
+  "Today's Intelligence"/"Since Your Last Scan" as first-class rows (not a
+  computed view) so Mark-reviewed/Dismiss and Accept/Reject have something
+  to persist against. Added in Phase 1 alongside the live database — see
+  ARCHITECTURE.md §2.8.
 
 ### Work
 - **Task** — organizationId, dealId?, clientId?, title, description,
   ownerId, priority, dueDate, status (`TODO | IN_PROGRESS | COMPLETED |
-  DISMISSED`), sourceEmailId?, aiConfidencePercent?, createdAt.
+  DISMISSED`), sourceEmailId?, aiConfidencePercent?, deadlineSourceText?
+  (Phase 3 — the original phrase, e.g. "by Friday", distinct from the
+  normalized `dueDate`), createdAt.
 - **Document** — dealId, name, category, storageRef, uploadedById,
   createdAt.
 - **Meeting** — dealId, title, startsAt, endsAt, attendees[], location,
@@ -144,6 +179,9 @@ EmailAccount 1—* EmailThread 1—* Email 1—* EmailAttachment
 Email 1—* AiExtraction
 Client 1—* Opportunity
 Deal 1—* IntelligenceEvent   (also Client 1—*, Email 1—*, AiExtraction 1—*)
+Email 1—* EmailParticipant *—0..1 Contact / User
+Email 1—0..1 EmailClassification
+EmailProcessingJob 1—* Email (processed by), 1—* EmailProcessingLog
 ```
 
 ## Reproducing the database
@@ -156,11 +194,16 @@ npx tsx prisma/seed.ts   # truncates app tables, then repopulates everything
 
 `prisma/seed.ts` is idempotent — it truncates all application tables before
 inserting, so re-running it always produces the same dataset (10 clients,
-20 companies, 25 deals, 100+ emails, 50+ intelligence events, 40+ tasks,
+20 companies, 25 deals, 202 emails, 50+ intelligence events, 40+ tasks,
 100+ timeline events). It reuses `src/lib/data/fixtures/*` for six
 hand-curated "hero" deals (Falcon, Atlas, Orion, Phoenix, Everest, Apollo)
 and generates the rest programmatically via `prisma/seed/` helpers (seeded
-RNG, a 20-company pool, email/task content templates).
+RNG, a 20-company pool, email/task content templates). Of the 202 emails,
+~112 are pre-processed narrative history (`processingStatus: PROCESSED`);
+the remaining ~90 (`prisma/seed/backlog.ts`) are seeded `PENDING` — the
+unprocessed mailbox **Run Scan** (`PHASE3_EMAIL_INTELLIGENCE.md`) actually
+works through. Reseeding therefore also resets the scan backlog to
+pristine.
 
 ## Why Prisma 7 specifics matter here
 

@@ -1,5 +1,6 @@
 import type {
   AIProvider,
+  ClassificationContext,
   DealCandidate,
   DealContext,
   DealMatchResult,
@@ -16,10 +17,10 @@ import type {
 // produce (AI_EXTRACTION_SPEC.md §4), so swapping this in changes no UI code.
 
 export class AnthropicProvider implements AIProvider {
-  async classifyRelevance(email: EmailInput): Promise<RelevanceResult> {
+  async classifyRelevance(email: EmailInput, context: ClassificationContext): Promise<RelevanceResult> {
     throw new Error(
-      `AnthropicProvider.classifyRelevance is a planned integration (subject="${email.subject}"). ` +
-        "No live ANTHROPIC_API_KEY is configured in this environment.",
+      `AnthropicProvider.classifyRelevance is a planned integration (subject="${email.subject}", ` +
+        `threadLinked=${context.threadAlreadyLinkedToDeal}). No live ANTHROPIC_API_KEY is configured in this environment.`,
     );
   }
 

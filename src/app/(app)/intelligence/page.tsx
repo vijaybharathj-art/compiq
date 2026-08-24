@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IntelligenceFeedItem } from "@/components/intelligence/feed-item";
+import { IntelligenceSubNav } from "@/components/intelligence/sub-nav";
 import { EmptyState } from "@/components/shared/empty-state";
 import { intelligenceRepository } from "@/lib/data";
 import type { IntelligenceCategory } from "@/types/domain";
@@ -32,6 +33,7 @@ export default async function IntelligencePage({
         title="Intelligence Feed"
         description="Every meaningful change Tattava detected in your inbox, with source evidence and confidence."
       />
+      <IntelligenceSubNav />
 
       <div className="px-8 pt-5">
         <Tabs defaultValue={initial}>

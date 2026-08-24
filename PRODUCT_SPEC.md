@@ -51,7 +51,12 @@ Finance, Restructuring, Private Capital, Advisory.
    Activity / Tasks / Opportunities / Risks / Important Emails), each item
    traceable to source evidence with a confidence score. **Live in Phase 1**:
    Mark reviewed / Dismiss persist `IntelligenceEvent.reviewStatus` to the
-   database via a Server Action.
+   database via a Server Action. **Live in Phase 3**: two sibling screens
+   under the same Intelligence area — **AI Review** (`/intelligence/review`,
+   70–89%-confidence suggestions with Accept/Reject, each opening an
+   Evidence Viewer dialog onto the source email) and **Scan**
+   (`/intelligence/scan`, the "Run Scan" control, scan history, and Email
+   Activity) — see `PHASE3_EMAIL_INTELLIGENCE.md` §7/§9.
 6. **Tasks** — board (To Do / In Progress / Completed / Dismissed) of
    AI-generated and manually created tasks with owner, priority, due date,
    source email, confidence. **Live in Phase 1**: drag-and-drop between
@@ -98,7 +103,7 @@ later without a code change.
   Closing skeleton until service-specific workflows are defined by an
   administrator.
 
-## 8. Email intelligence pipeline (summary — full detail in `AI_EXTRACTION_SPEC.md`)
+## 8. Email intelligence pipeline (summary — full detail in `PHASE3_EMAIL_INTELLIGENCE.md`)
 
 ```
 Email → Ingestion → Thread Reconstruction → Relevance Classification →
@@ -106,6 +111,10 @@ IB Entity Extraction → Deal Matching → Change Detection → Confidence
 Scoring → Human Review (where required) → Database Update → Intelligence
 Feed
 ```
+
+**Live as of Phase 3**, driven by "Run Scan" against a seeded, unprocessed
+mailbox backlog — not a simulated UI. Real Gmail/Microsoft 365 ingestion
+remains a later phase (§12).
 
 ## 9. Confidence policy (never make silent high-risk changes)
 
@@ -128,7 +137,7 @@ financing", "interested in acquiring", etc.) generate **Potential
 Opportunity** cards, never presented as confirmed fact — always hedged
 ("Potential opportunity detected").
 
-## 11. Demo Mode → Phase 1: a live seeded database
+## 11. Demo Mode → Phase 1: a live seeded database → Phase 3: a live pipeline
 
 Before any real Gmail/Outlook connection, the full UI and workflow run
 against a realistic fictional dataset — but as of Phase 1 that dataset lives
@@ -136,7 +145,7 @@ in a real PostgreSQL database, not in-memory fixtures. `prisma/seed.ts`
 populates it: six hand-curated "hero" deals matching the original product
 narrative (Project Falcon, Atlas, Orion, Phoenix, Everest, Apollo) plus
 programmatically generated "filler" deals, clients, and activity, built to
-minimum volumes (10 clients, 20 companies, 25 deals, 100+ emails, 50+
+minimum volumes (10 clients, 20 companies, 25 deals, 202 emails, 50+
 intelligence events, 40+ tasks, 100+ timeline events) using a seeded RNG for
 reproducibility. Every page reads through the same repository interfaces
 (`src/lib/data/`) that a production deployment would use — nothing is
@@ -145,6 +154,16 @@ hardcoded in a component. Sign-in is a Credentials-based "continue as
 exchange. See `ARCHITECTURE.md` §2.2 and `DATABASE_SCHEMA.md` "Reproducing
 the database" for how it plugs into the same interfaces the live system
 (real OAuth + real mailbox ingestion) will use.
+
+As of Phase 3, ~90 of those 202 emails are seeded unprocessed
+(`processingStatus: PENDING`) — a genuine mailbox backlog, not just
+narrative history. **Run Scan** (`/intelligence/scan`) runs the real
+pipeline (`PHASE3_EMAIL_INTELLIGENCE.md`) over that backlog against
+`DemoEmailProvider`, a live `EmailProvider` implementation backed by the
+same Postgres tables — classification, extraction, deal matching, change
+detection, and task/risk/opportunity generation all genuinely execute and
+write real rows; nothing about the scan result is precomputed or
+hardcoded.
 
 ## 12. Non-goals for v1
 

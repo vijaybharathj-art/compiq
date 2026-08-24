@@ -104,6 +104,7 @@ function enrichDeal(deal: DealWithRelations): DealListItem {
     expectedCloseDate: deal.expectedCloseDate?.toISOString(),
     priority: deal.priority,
     riskStatus: deal.riskStatus,
+    riskNote: deal.riskNote ?? undefined,
     aiConfidencePercent: deal.aiConfidencePercent ?? 0,
   };
 }

@@ -11,6 +11,7 @@ import { StatTile } from "@/components/dashboard/stat-tile";
 import { MorningBriefing } from "@/components/dashboard/morning-briefing";
 import { ActionRequiredCard } from "@/components/dashboard/action-required";
 import { NewOpportunitiesCard } from "@/components/dashboard/new-opportunities";
+import { SinceLastScanCard } from "@/components/dashboard/since-last-scan";
 import { IntelligenceFeedItem } from "@/components/intelligence/feed-item";
 import { Card, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
 import { dashboardRepository } from "@/lib/data";
@@ -30,6 +31,10 @@ export default async function DashboardPage() {
       />
 
       <MorningBriefing data={data} firstName={firstName} />
+
+      <div className="px-8 pt-6">
+        <SinceLastScanCard />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 px-8 pt-6 sm:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Active Deals" value={String(data.stats.activeDeals)} icon={Briefcase} />

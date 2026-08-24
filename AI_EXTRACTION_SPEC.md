@@ -1,5 +1,12 @@
 # Tattava — AI Extraction Specification
 
+This document is the original design spec, written before the pipeline was
+implemented. **`PHASE3_EMAIL_INTELLIGENCE.md` documents the live
+implementation** — module-by-module, with the handful of places
+implementation diverged from this spec for good reason (e.g. one
+`AiExtraction` row per detected change rather than per email). Where the
+two disagree, the Phase 3 doc reflects what's actually running.
+
 ## 1. Pipeline
 
 ```
@@ -17,7 +24,7 @@ extraction record.
 
 ## 2. Ingestion & thread reconstruction
 
-`EmailProvider.listThreads()` / `getThread()` pull raw messages into
+`EmailProvider.getThreads()` / `getThread()` pull raw messages into
 `EmailThread` / `Email` rows. Threads are reconstructed using the
 provider's native thread id first, falling back to `References`/`In-Reply-
 To` headers and normalized subject matching (`Re:`/`Fwd:` stripped) when a
@@ -140,7 +147,7 @@ detected"), never as confirmed fact.
 
 ```ts
 interface AIProvider {
-  classifyRelevance(email: EmailInput): Promise<RelevanceResult>
+  classifyRelevance(email: EmailInput, context: ClassificationContext): Promise<RelevanceResult>
   extractEntities(email: EmailInput, context: DealContext): Promise<ExtractionResult>
   matchDeal(extraction: ExtractionResult, candidates: DealCandidate[]): Promise<DealMatchResult>
 }
@@ -148,19 +155,23 @@ interface AIProvider {
 
 `AnthropicProvider` and `OpenAIProvider` implement this against
 `AI_PROVIDER=anthropic|openai`; both are stubbed (`PLANNED INTEGRATION`) —
-no live API keys exist in this environment. **Phase 1 ships a third, live
-implementation: `DemoExtractionProvider`** (`AI_PROVIDER=demo`, the
-default), a rule-based extractor using keyword/regex heuristics for
-relevance, dollar amounts, and risk/opportunity signals. It implements the
-exact same interface and is what `prisma/seed.ts` calls to generate the
-`confidencePercent`, `matchType`, and evidence excerpts on every seeded
-`AiExtraction`/`IntelligenceEvent` row — so the UI, confidence-scoring
-policy (§7), and evidence system (§8) all exercise real code paths today,
-with swapping in a real LLM provider changing zero downstream code. Prompts
-for the LLM-backed providers are versioned under `src/lib/ai/prompts/` and
-never embed org-specific data as few-shot examples — extraction context is
-passed as structured input, not baked into the prompt text, so no customer
-email content is retained as a "training example."
+no live API keys exist in this environment. **The live implementation is
+`DemoAIProvider`** (`AI_PROVIDER=demo`, the default), a rule-based
+extractor using composable helpers (`src/lib/ai/extractors.ts`) for
+context-aware relevance, dollar amounts (with hedge-language detection),
+stage-transition phrases, deadline normalization, and risk/opportunity
+signals. It implements the exact same interface and, as of Phase 3, is
+what the real pipeline (`src/lib/pipeline/`, driven by "Run Scan") calls
+live against the seeded email backlog — not just what `prisma/seed.ts`
+uses to backfill history. Every output is validated against
+`ExtractionResultSchema` (Zod) before it's written, so the UI,
+confidence-scoring policy (§7), and evidence system (§8) all exercise real
+code paths today, with swapping in a real LLM provider changing zero
+downstream code. Prompts for every stage are versioned under
+`src/lib/ai/prompts/` and never embed org-specific data as few-shot
+examples — extraction context is passed as structured input, not baked
+into the prompt text, so no customer email content is retained as a
+"training example." Full detail: `PHASE3_EMAIL_INTELLIGENCE.md`.
 
 ## 11. Data policy
 

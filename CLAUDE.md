@@ -21,7 +21,8 @@ banking workflows.
 | `PRODUCT_SPEC.md` | Product vision, UX requirements, feature scope |
 | `ARCHITECTURE.md` | Tech stack, module boundaries, provider abstractions, decision log |
 | `DATABASE_SCHEMA.md` | Entity-relationship reference for `prisma/schema.prisma` |
-| `AI_EXTRACTION_SPEC.md` | Email intelligence pipeline, confidence policy, prompts |
+| `AI_EXTRACTION_SPEC.md` | Email intelligence pipeline spec, confidence policy, prompts |
+| `PHASE3_EMAIL_INTELLIGENCE.md` | The **live** email-to-deal-intelligence pipeline — modules, provider abstractions, matching engine, jobs/observability |
 | `SECURITY.md` | Auth, data isolation, secrets, RBAC, audit policy |
 | `DESIGN_SYSTEM.md` | Visual language, tokens, component conventions |
 
@@ -35,9 +36,14 @@ banking workflows.
   (`src/lib/auth/config.ts`); Google + Microsoft Entra ID OAuth are
   scaffolded and planned (SECURITY.md §1)
 - `@dnd-kit/core` — Pipeline and Tasks board drag-and-drop
-- `EmailProvider` abstraction — `GmailProvider` / `OutlookProvider` (planned)
-- `AIProvider` abstraction — `DemoExtractionProvider` (live, rule-based,
-  used by the seed script) / Anthropic / OpenAI (planned)
+- `EmailProvider` abstraction (`src/lib/email/`) — `DemoEmailProvider`
+  (live, backed by the seeded mailbox) / `GmailProvider` /
+  `MicrosoftGraphProvider` (planned)
+- `AIProvider` abstraction (`src/lib/ai/`) — `DemoAIProvider` (live,
+  rule-based, drives the real email intelligence pipeline) / Anthropic /
+  OpenAI (planned) — see `PHASE3_EMAIL_INTELLIGENCE.md`
+- Zod — validates every AI extraction against a strict schema before it's
+  ever written to the database (`src/lib/ai/extraction-schema.ts`)
 
 ## Phase 1: Postgres is the live runtime
 
@@ -60,6 +66,20 @@ per `ARCHITECTURE.md` if the container restarts.
 Mutations (deal stage drag-and-drop, task status drag-and-drop, Intelligence
 Feed review actions, notification read state) go through Server Actions in
 `src/lib/actions/mutations.ts`, each writing an `AuditLog` row.
+
+## Phase 3: the email intelligence pipeline is live
+
+`src/lib/pipeline/` implements the full email-to-deal-intelligence pipeline
+described in `PHASE3_EMAIL_INTELLIGENCE.md` — classification, extraction,
+client/deal matching, change detection, confidence-gated auto-apply vs.
+human review, task/meeting/risk/opportunity generation — run for real
+against `DemoEmailProvider`'s seeded mailbox backlog, not a UI that
+pretends processing happened. **Run Scan** (`/intelligence/scan`) triggers
+it via `triggerEmailScan()` (`src/lib/actions/pipeline-actions.ts`);
+**AI Review** (`/intelligence/review`) is where 70–89%-confidence
+suggestions wait for Accept/Reject. `prisma/seed.ts` seeds 202 emails
+total — ~112 pre-processed history plus a ~90-email unprocessed backlog
+that Run Scan actually works through.
 
 ## Working conventions
 

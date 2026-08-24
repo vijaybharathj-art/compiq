@@ -1,20 +1,21 @@
 import { AnthropicProvider } from "./anthropic-provider";
 import { OpenAIProvider } from "./openai-provider";
-import { DemoExtractionProvider } from "./demo-provider";
+import { DemoAIProvider } from "./demo-provider";
 import type { AIProvider } from "./types";
 
 export type { AIProvider } from "./types";
 export * from "./types";
-export { DemoExtractionProvider } from "./demo-provider";
+export { DemoAIProvider } from "./demo-provider";
 
 let cached: AIProvider | undefined;
 
 /**
  * Resolves the AIProvider implementation from AI_PROVIDER ("demo" |
  * "anthropic" | "openai", default "demo"). See ARCHITECTURE.md §3 —
- * swapping vendors never touches page/component code, only this factory.
- * "demo" (DemoExtractionProvider) is a real rule-based implementation used
- * by prisma/seed.ts and requires no API key.
+ * swapping vendors never touches page/component or pipeline code, only
+ * this factory. "demo" (DemoAIProvider) is a real rule-based
+ * implementation that requires no API key; the email intelligence
+ * pipeline (src/lib/pipeline/) calls this same factory.
  */
 export function getAIProvider(): AIProvider {
   if (!cached) {
@@ -26,7 +27,7 @@ export function getAIProvider(): AIProvider {
         cached = new AnthropicProvider();
         break;
       default:
-        cached = new DemoExtractionProvider();
+        cached = new DemoAIProvider();
     }
   }
   return cached;

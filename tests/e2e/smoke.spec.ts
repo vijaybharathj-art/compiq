@@ -41,6 +41,8 @@ test.describe("Tattava Phase 1 smoke test", () => {
       { path: "/clients/client-acme", expectText: "Relationship Intelligence" },
       { path: "/tasks", expectText: "To Do" },
       { path: "/intelligence", expectText: "Intelligence Feed" },
+      { path: "/intelligence/review", expectText: "AI Review" },
+      { path: "/intelligence/scan", expectText: "Email Scan" },
       { path: "/pipeline", expectText: "Pipeline" },
       { path: "/calendar", expectText: "Calendar" },
       { path: "/settings", expectText: "Team Members" },
@@ -79,5 +81,28 @@ test.describe("Tattava Phase 1 smoke test", () => {
 
     await page.goto("/pipeline");
     await expect(page.getByText("drag a card to change its stage")).toBeVisible();
+  });
+
+  test("Run Scan actually executes the email intelligence pipeline", async ({ page }) => {
+    await page.goto("/dashboard");
+    await page.getByText("Bharath Vijay").click();
+    await page.waitForURL("**/dashboard");
+
+    await page.goto("/intelligence/scan");
+    await expect(page.getByText(/emails waiting to be scanned/)).toBeVisible();
+
+    await page.getByRole("button", { name: "Run Scan" }).click();
+    await expect(page.getByText("Scan complete")).toBeVisible({ timeout: 30_000 });
+
+    // The summary must reflect real counters, not a placeholder — some
+    // emails in the seeded backlog are always classified relevant.
+    const emailsScanned = await page
+      .locator("text=Emails scanned")
+      .locator("xpath=following-sibling::*[1]")
+      .innerText();
+    expect(Number(emailsScanned)).toBeGreaterThan(0);
+
+    await page.getByRole("link", { name: "View Intelligence" }).click();
+    await page.waitForURL("**/intelligence");
   });
 });

@@ -18,6 +18,7 @@ import { DEMO_ORG_ID } from "@/lib/constants";
 import { companyPool, companiesByArchetype } from "./seed/companies";
 import { createRng, pick, randomInt, daysAgoIso, daysFromIso } from "./seed/rng";
 import { generateFillerEmail, FILLER_TASK_TITLES, MILESTONE_NOTE_TEMPLATES } from "./seed/templates";
+import { buildBacklogEmails, type DealRef, type ContactRef } from "./seed/backlog";
 import type {
   BankingServiceCode,
   DealParticipantRole,
@@ -80,6 +81,9 @@ async function main() {
 
   console.log("Seeding email account, threads & emails...");
   const emailIndex = await seedEmailsAndThreads(allDeals);
+
+  console.log("Seeding unprocessed email backlog (for Run Scan)...");
+  await seedBacklogEmails(allDeals, stagesByService);
 
   console.log("Seeding AI extractions & evidence...");
   await seedAiExtractions(allDeals, emailIndex);
@@ -768,12 +772,119 @@ async function seedEmailsAndThreads(allDeals: SeedDeal[]) {
       receivedAt: e.receivedAt,
       relevance: e.relevance,
       relevanceScore: e.relevanceScore,
+      processingStatus: "PROCESSED" as const,
+      processedAt: e.receivedAt,
     })),
   });
 
   console.log(`  ${emails.length} emails across ${threadLastMessage.size} threads`);
 
   return { emails, heroEmailIndex };
+}
+
+// ---------------------------------------------------------------------------
+// Unprocessed backlog (Phase 3 — Run Scan works through these live)
+// ---------------------------------------------------------------------------
+
+async function seedBacklogEmails(allDeals: SeedDeal[], stagesByService: StageMap) {
+  const buyerRows = await prisma.dealParticipant.findMany({
+    where: { role: "BUYER" },
+    include: { company: true },
+  });
+  const buyerByDeal = new Map<string, string>();
+  for (const r of buyerRows) if (!buyerByDeal.has(r.dealId)) buyerByDeal.set(r.dealId, r.company.name);
+
+  const dealRefs: DealRef[] = allDeals.map((d) => ({
+    id: d.id,
+    projectCodename: d.projectCodename,
+    clientId: d.clientId,
+    clientName: d.clientName,
+    bankingServiceId: d.bankingServiceId,
+    currentStageId: d.currentStageId,
+    currentStageKey: stagesByService[d.bankingServiceId].find((s) => s.id === d.currentStageId)?.key ?? "",
+    buyerCompanyName: buyerByDeal.get(d.id) ?? "the buyer",
+  }));
+
+  const halcyonFixture = clientFixtures.find((c) => c.id === "client-halcyon");
+  const halcyonContact: ContactRef | undefined = halcyonFixture
+    ? { name: halcyonFixture.contacts[0]!.name, email: halcyonFixture.contacts[0]!.email, clientName: halcyonFixture.name }
+    : undefined;
+
+  const backlog = buildBacklogEmails(
+    rng,
+    dealRefs,
+    bankers.map((b) => ({ name: b.name, email: b.email })),
+    new Date(NOW),
+    allDeals.some((d) => d.id === "deal-falcon") ? "deal-falcon" : undefined,
+    allDeals.some((d) => d.id === "deal-atlas") ? "deal-atlas" : undefined,
+    allDeals.some((d) => d.id === "deal-orion") ? "deal-orion" : undefined,
+    halcyonContact,
+  );
+
+  const newThreads = new Map<string, { id: string; subject: string; receivedAt: Date }>();
+  let newThreadSeq = 0;
+  for (const e of backlog) {
+    if (!e.threadId && e.newThreadSubject) {
+      const existing = newThreads.get(e.newThreadSubject);
+      if (!existing || e.receivedAt > existing.receivedAt) {
+        newThreads.set(e.newThreadSubject, {
+          id: existing?.id ?? `thread-backlog-${newThreadSeq++}`,
+          subject: e.newThreadSubject,
+          receivedAt: e.receivedAt,
+        });
+      }
+    }
+  }
+
+  if (newThreads.size > 0) {
+    await prisma.emailThread.createMany({
+      data: [...newThreads.values()].map((t) => ({
+        id: t.id,
+        emailAccountId: "email-account-bharath",
+        providerThreadId: t.id,
+        subject: t.subject,
+        dealId: null,
+        clientId: null,
+        lastMessageAt: t.receivedAt,
+      })),
+    });
+  }
+
+  await prisma.email.createMany({
+    data: backlog.map((e, i) => {
+      const threadId = e.threadId ?? newThreads.get(e.newThreadSubject!)!.id;
+      return {
+        id: `email-backlog-${i}`,
+        threadId,
+        providerMessageId: `${threadId}-backlog-msg-${i}`,
+        fromAddress: e.fromAddress,
+        fromName: e.fromName,
+        toAddresses: [e.toAddress],
+        ccAddresses: [],
+        subject: e.subject,
+        bodyText: e.bodyText,
+        receivedAt: e.receivedAt,
+        processingStatus: "PENDING" as const,
+      };
+    }),
+  });
+
+  // Keep existing threads' lastMessageAt honest if a backlog email is the
+  // newest message on that thread.
+  const latestByExistingThread = new Map<string, Date>();
+  for (const e of backlog) {
+    if (!e.threadId) continue;
+    const current = latestByExistingThread.get(e.threadId);
+    if (!current || e.receivedAt > current) latestByExistingThread.set(e.threadId, e.receivedAt);
+  }
+  for (const [threadId, date] of latestByExistingThread) {
+    const thread = await prisma.emailThread.findUnique({ where: { id: threadId }, select: { lastMessageAt: true } });
+    if (thread && date > thread.lastMessageAt) {
+      await prisma.emailThread.update({ where: { id: threadId }, data: { lastMessageAt: date } });
+    }
+  }
+
+  console.log(`  ${backlog.length} unprocessed backlog emails (${newThreads.size} new threads)`);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import type {
   AIProvider,
+  ClassificationContext,
   DealCandidate,
   DealContext,
   DealMatchResult,
@@ -15,10 +16,10 @@ import type {
 // hard-coded vendor (AI_EXTRACTION_SPEC.md §10, PRODUCT_SPEC.md §27).
 
 export class OpenAIProvider implements AIProvider {
-  async classifyRelevance(email: EmailInput): Promise<RelevanceResult> {
+  async classifyRelevance(email: EmailInput, context: ClassificationContext): Promise<RelevanceResult> {
     throw new Error(
-      `OpenAIProvider.classifyRelevance is a planned integration (subject="${email.subject}"). ` +
-        "No live OPENAI_API_KEY is configured in this environment.",
+      `OpenAIProvider.classifyRelevance is a planned integration (subject="${email.subject}", ` +
+        `threadLinked=${context.threadAlreadyLinkedToDeal}). No live OPENAI_API_KEY is configured in this environment.`,
     );
   }
 

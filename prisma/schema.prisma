@@ -35,6 +35,8 @@ model User {
   emailAccounts     EmailAccount[]
   sessions          Session[]
   accounts          Account[]
+  emailParticipants EmailParticipant[]
+  triggeredScans    EmailProcessingJob[]
 
   @@map("users")
 }
@@ -94,6 +96,7 @@ model Organization {
   emailAccounts      EmailAccount[]
   auditLogs          AuditLog[]
   intelligenceEvents IntelligenceEvent[]
+  emailProcessingJobs EmailProcessingJob[]
 
   @@map("organizations")
 }
@@ -215,6 +218,7 @@ model Contact {
   isKeyContact Boolean @default(false)
 
   client Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  emailParticipants EmailParticipant[]
 
   @@index([clientId])
   @@map("contacts")
@@ -296,6 +300,7 @@ model Deal {
   expectedCloseDate         DateTime?
   priority                  DealPriority  @default(MEDIUM)
   riskStatus                RiskStatus    @default(ON_TRACK)
+  riskNote                  String?
   aiConfidencePercent       Int?
   originatingOpportunityId  String?       @unique
 
@@ -421,15 +426,16 @@ enum DealTeamRole {
 }
 
 model DealEvent {
-  id             String        @id @default(cuid())
-  dealId         String
-  type           DealEventType
-  previousValue  String?
-  newValue       String?
-  occurredAt     DateTime      @default(now())
-  sourceEmailId  String?
-  aiExtractionId String?
-  note           String?
+  id                String        @id @default(cuid())
+  dealId            String
+  type              DealEventType
+  previousValue     String?
+  newValue          String?
+  occurredAt        DateTime      @default(now())
+  sourceEmailId     String?
+  aiExtractionId    String?
+  confidencePercent Int?
+  note              String?
 
   deal         Deal          @relation(fields: [dealId], references: [id], onDelete: Cascade)
   sourceEmail  Email?        @relation(fields: [sourceEmailId], references: [id])
@@ -503,8 +509,12 @@ model EmailThread {
   @@map("email_threads")
 }
 
+// Email.relevance/relevanceScore stay denormalized on the row for fast reads
+// (deal pages, search) — EmailClassification below is the durable,
+// versioned record of *why*, written once per email by the classification
+// pipeline stage (AI_EXTRACTION_SPEC.md §3, PHASE3_EMAIL_INTELLIGENCE.md §5-6).
 model Email {
-  id                String         @id @default(cuid())
+  id                String              @id @default(cuid())
   threadId          String
   providerMessageId String
   fromAddress       String
@@ -512,22 +522,32 @@ model Email {
   toAddresses       String[]
   ccAddresses       String[]
   subject           String
-  bodyText          String         @db.Text
+  bodyText          String              @db.Text
   receivedAt        DateTime
-  relevance         EmailRelevance @default(NOT_RELEVANT)
+  relevance         EmailRelevance      @default(NOT_RELEVANT)
   relevanceScore    Float?
+  processingStatus  EmailProcessingStatus @default(PENDING)
+  processingError   String?
+  processedAt       DateTime?
+  processingJobId   String?
+  createdAt         DateTime            @default(now())
 
-  thread             EmailThread         @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread             EmailThread          @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  processingJob      EmailProcessingJob?  @relation(fields: [processingJobId], references: [id])
   attachments        EmailAttachment[]
+  participants       EmailParticipant[]
+  classification     EmailClassification?
   aiExtractions      AiExtraction[]
   dealEvents         DealEvent[]
   tasks              Task[]
   meetings           Meeting[]
   opportunities      Opportunity[]
   intelligenceEvents IntelligenceEvent[]
+  processingLogs     EmailProcessingLog[]
 
   @@unique([threadId, providerMessageId])
   @@index([threadId])
+  @@index([processingStatus])
   @@map("emails")
 }
 
@@ -535,6 +555,17 @@ enum EmailRelevance {
   IB_RELEVANT
   POSSIBLY_RELEVANT
   NOT_RELEVANT
+}
+
+// PENDING: ingested but not yet run through the pipeline (the "Run Scan"
+// backlog). PROCESSING: a job currently owns it. PROCESSED: pipeline ran to
+// completion (regardless of relevance outcome). PROCESSING_FAILED: a stage
+// threw — the email is preserved as-is and is retryable (spec §33).
+enum EmailProcessingStatus {
+  PENDING
+  PROCESSING
+  PROCESSED
+  PROCESSING_FAILED
 }
 
 model EmailAttachment {
@@ -551,10 +582,116 @@ model EmailAttachment {
   @@map("email_attachments")
 }
 
+// Normalized participant rows per email — used by client/deal matching to
+// weigh "this address is a known contact/banker" more heavily than a raw
+// name-match on the body text (spec §7/§11).
+model EmailParticipant {
+  id        String               @id @default(cuid())
+  emailId   String
+  address   String
+  name      String?
+  role      EmailParticipantRole
+  contactId String?
+  bankerId  String?
+
+  email   Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  contact Contact? @relation(fields: [contactId], references: [id])
+  banker  User?    @relation(fields: [bankerId], references: [id])
+
+  @@index([emailId])
+  @@index([address])
+  @@map("email_participants")
+}
+
+enum EmailParticipantRole {
+  FROM
+  TO
+  CC
+  BCC
+}
+
+// One row per email, written once by the classification stage. Distinct
+// from the AiExtraction/AiExtractionEvidence pair below, which only exist
+// for emails classified RELEVANT or POSSIBLY_RELEVANT and carry the
+// structured IB entity extraction, not just the relevance verdict.
+model EmailClassification {
+  id            String         @id @default(cuid())
+  emailId       String         @unique
+  label         EmailRelevance
+  confidence    Float
+  reason        String         @db.Text
+  promptVersion String
+  createdAt     DateTime       @default(now())
+
+  email Email @relation(fields: [emailId], references: [id], onDelete: Cascade)
+
+  @@map("email_classifications")
+}
+
+// One row per "Run Scan" invocation — the unit of observability and retry
+// for the pipeline (spec §26/§32/§33). displayId is the human-readable
+// SCAN-YYYY-MM-DD-NNN form; id stays a cuid for relations.
+model EmailProcessingJob {
+  id                   String    @id @default(cuid())
+  displayId             String    @unique
+  organizationId        String
+  status                JobStatus @default(QUEUED)
+  triggeredById         String?
+  stage                 String?
+  totalEmails           Int       @default(0)
+  processedCount        Int       @default(0)
+  relevantCount         Int       @default(0)
+  dealsUpdated          Int       @default(0)
+  tasksCreated          Int       @default(0)
+  opportunitiesCreated  Int       @default(0)
+  risksDetected         Int       @default(0)
+  suggestionsForReview  Int       @default(0)
+  errorMessage          String?
+  startedAt             DateTime?
+  finishedAt            DateTime?
+  createdAt             DateTime  @default(now())
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  triggeredBy  User?                @relation(fields: [triggeredById], references: [id])
+  emails       Email[]
+  logs         EmailProcessingLog[]
+
+  @@index([organizationId])
+  @@map("email_processing_jobs")
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Structured, per-stage log lines for one job — metadata/ids only, never
+// full email bodies (spec §32/§36).
+model EmailProcessingLog {
+  id        String   @id @default(cuid())
+  jobId     String
+  emailId   String?
+  stage     String
+  level     String
+  message   String
+  createdAt DateTime @default(now())
+
+  job   EmailProcessingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  email Email?             @relation(fields: [emailId], references: [id])
+
+  @@index([jobId])
+  @@map("email_processing_logs")
+}
+
 // ---------------------------------------------------------------------------
 // AI extraction & evidence
 // ---------------------------------------------------------------------------
 
+// extractedFields holds the strict JSON shape validated by
+// src/lib/ai/extraction-schema.ts (Zod) before this row is ever written —
+// "never trust raw LLM output directly" (spec §8).
 model AiExtraction {
   id                String                  @id @default(cuid())
   emailId           String
@@ -563,6 +700,8 @@ model AiExtraction {
   confidencePercent Int
   matchType         DealMatchType
   appliedStatus     ExtractionAppliedStatus @default(INFO_ONLY)
+  promptVersion     String?
+  processingJobId   String?
   createdAt         DateTime                @default(now())
 
   email              Email                  @relation(fields: [emailId], references: [id], onDelete: Cascade)
@@ -623,6 +762,7 @@ model Task {
   status              TaskStatus   @default(TODO)
   sourceEmailId       String?
   aiConfidencePercent Int?
+  deadlineSourceText  String?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 
@@ -736,6 +876,7 @@ model IntelligenceEvent {
   id                String                   @id @default(cuid())
   organizationId    String
   category          IntelligenceCategory
+  eventType         IntelligenceEventType?
   dealId            String?
   clientId          String?
   headline          String
@@ -745,6 +886,7 @@ model IntelligenceEvent {
   confidencePercent Int?
   sourceEmailId     String?
   aiExtractionId    String?
+  processingJobId   String?
   reviewStatus      IntelligenceReviewStatus @default(NEW)
   occurredAt        DateTime
   createdAt         DateTime                 @default(now())
@@ -769,6 +911,25 @@ enum IntelligenceCategory {
   OPPORTUNITY
   RISK
   IMPORTANT_EMAIL
+}
+
+// Fine-grained event type (spec §23), additive to the coarser `category`
+// the Intelligence Feed tabs filter on — each IntelligenceEventType maps to
+// exactly one IntelligenceCategory (see src/lib/pipeline/intelligence-events.ts).
+enum IntelligenceEventType {
+  DEAL_CREATED
+  DEAL_VALUE_CHANGED
+  STAGE_CHANGED
+  BUYER_ADDED
+  BUYER_REMOVED
+  MANDATE_CHANGED
+  DEADLINE_DETECTED
+  TASK_CREATED
+  RISK_DETECTED
+  OPPORTUNITY_DETECTED
+  CLIENT_ACTIVITY
+  IMPORTANT_EMAIL
+  DEAL_INACTIVE
 }
 
 enum IntelligenceReviewStatus {

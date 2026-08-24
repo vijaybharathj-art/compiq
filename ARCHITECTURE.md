@@ -14,7 +14,8 @@
 | Database | PostgreSQL | live and seeded in this environment |
 | Auth | Auth.js (NextAuth v5) | Credentials-based demo login **live**; Google + Microsoft Entra ID planned |
 | Drag-and-drop | `@dnd-kit/core` | Pipeline board (deal stage) and Task board (status) |
-| Validation | Zod | server action / route handler input validation |
+| Validation | Zod | server action / route handler input validation; also validates every AI extraction (§3) |
+| Email intelligence | `src/lib/pipeline/` | modular pipeline, **live** against `DemoEmailProvider` — see `PHASE3_EMAIL_INTELLIGENCE.md` |
 | Testing | Vitest (unit + DB integration) + Playwright (`@playwright/test`, e2e smoke) | see §6 |
 
 ## 2. Decision log
@@ -98,46 +99,82 @@ decisions yourself and document them"):
     action={updateNotificationPreferences}>` submits them via a Server
     Action with no client-side state required — consistent with decision
     #11's "Server Action, not a route handler" rule.
+13. **One `AiExtraction` row per detected change, not per email.** An email
+    can simultaneously carry a value change and a stage change; modeling
+    them as separate extraction rows (each with its own confidence,
+    evidence, and applied status) lets the AI Review Center accept one and
+    reject the other independently, and keeps `acceptExtraction()`'s
+    mutation path identical to whatever the pipeline's own `AUTO_APPLY`
+    branch would have done.
+14. **Deterministic thread-continuity override in deal matching**, not a
+    second AI call. Once a thread is linked to a deal, every subsequent
+    email in it is matched to that deal unless a *different*, equally
+    explicit (≥95%) codename match appears — cheaper and more predictable
+    than asking the AI provider to re-litigate an already-known thread on
+    every message, and it's what actually prevents "Project Falcon" /
+    "Falcon Acquisition" from fragmenting into two deals.
+15. **The Run Scan Server Action runs synchronously to completion** rather
+    than kicking off background work the response doesn't wait for. A
+    Vercel serverless function isn't a durable worker, so fire-and-forget
+    after `return` isn't safe there; the client-side progress UI instead
+    cycles the real stage-name list (`src/lib/pipeline/stages.ts`) as a
+    loading indicator while the one request is in flight, then renders the
+    exact counters the action returns — never a hardcoded number.
 
 ## 3. Provider abstractions
+
+Full pipeline architecture (stages, matching engine, confidence policy,
+jobs/observability): `PHASE3_EMAIL_INTELLIGENCE.md`. Summary of the two
+provider abstractions it's built on:
 
 ### `EmailProvider`
 
 ```ts
 interface EmailProvider {
-  listThreads(accountId: string, since?: Date): Promise<EmailThreadSummary[]>
-  getThread(accountId: string, threadId: string): Promise<EmailThreadDetail>
-  getAttachment(accountId: string, attachmentId: string): Promise<Buffer>
-  watch(accountId: string): Promise<WatchHandle> // push notifications where supported
+  getThreads(accountId, since?): Promise<EmailThreadSummary[]>
+  getThread(accountId, providerThreadId): Promise<EmailThreadDetail>
+  getMessages(accountId, providerThreadId): Promise<EmailMessage[]>
+  getMessage(accountId, providerMessageId): Promise<EmailMessage>
+  getNewMessages(accountId, since?): Promise<EmailMessage[]>
+  getAttachments(accountId, providerMessageId): Promise<EmailAttachmentRef[]>
+  downloadAttachment(accountId, attachmentId): Promise<Buffer>
+  markProcessed(accountId, providerMessageId): Promise<void>
+  watch(accountId): Promise<WatchHandle> // push notifications where supported
 }
 ```
 
-Implementations: `GmailProvider` (Gmail API, OAuth via Google), `OutlookProvider`
-(Microsoft Graph API, OAuth via Entra ID). Selected per `EmailAccount.provider`
-at runtime by a factory (`getEmailProvider(account)`), so a third provider is
-a new class + one factory branch. **Status: interfaces + factory scaffolded;
-network calls are stubbed and clearly marked `// PLANNED INTEGRATION` — no
-real Gmail/Graph credentials exist in this environment.**
+Implementations: `DemoEmailProvider` (**live** — every method is a real
+Prisma read/write against the seeded mailbox; `getNewMessages` is what
+"Run Scan" pulls from), `GmailProvider` (Gmail API, OAuth via Google),
+`MicrosoftGraphProvider` (Microsoft Graph API, OAuth via Entra ID) — both
+planned, throwing `PLANNED INTEGRATION` errors, no real credentials exist
+in this environment. `getEmailProvider()` resolves to Demo unless
+`EMAIL_PROVIDER=live`; `getEmailProviderFor(provider)` dispatches per
+`EmailAccount.provider` once real accounts exist.
 
 ### `AIProvider`
 
 ```ts
 interface AIProvider {
-  classifyRelevance(email: EmailInput): Promise<RelevanceResult>
+  classifyRelevance(email: EmailInput, context: ClassificationContext): Promise<RelevanceResult>
   extractEntities(email: EmailInput, context: DealContext): Promise<ExtractionResult>
   matchDeal(extraction: ExtractionResult, candidates: DealCandidate[]): Promise<DealMatchResult>
 }
 ```
 
-Implementations: `DemoExtractionProvider` (live — a rule-based, no-API-key
-implementation using keyword/regex heuristics for relevance, dollar
-amounts, risk/opportunity signals; used by `prisma/seed.ts` to generate the
-confidence scores and evidence backing the seeded `AiExtraction` /
-`IntelligenceEvent` rows), `AnthropicProvider`, `OpenAIProvider` (both
-stubbed, throw with a `PLANNED INTEGRATION` message). All three sit behind
-`getAIProvider()` reading `AI_PROVIDER` env var (default `"demo"`). Swapping
-`AnthropicProvider`/`OpenAIProvider` in for real extraction changes zero UI
-code — the Intelligence Feed already reads `IntelligenceEvent` rows with
+Implementations: `DemoAIProvider` (live — a rule-based, no-API-key
+implementation using composable extractor functions
+(`src/lib/ai/extractors.ts`) for relevance, dollar amounts,
+stage-transition phrases, deadlines, risk/opportunity signals; drives the
+real pipeline in `src/lib/pipeline/` and is what "Run Scan" actually
+calls), `AnthropicProvider`, `OpenAIProvider` (both stubbed, throw with a
+`PLANNED INTEGRATION` message). All three sit behind `getAIProvider()`
+reading `AI_PROVIDER` env var (default `"demo"`). Every provider's output
+is validated against `ExtractionResultSchema` (Zod,
+`src/lib/ai/extraction-schema.ts`) before it's written to the database.
+Swapping `AnthropicProvider`/`OpenAIProvider` in for real extraction
+changes zero pipeline or UI code — the Intelligence Feed already reads
+`IntelligenceEvent` rows with
 the identical shape either path produces.
 
 ## 4. Directory layout
@@ -145,8 +182,8 @@ the identical shape either path produces.
 ```
 prisma/
   schema.prisma            # production DB model (see DATABASE_SCHEMA.md)
-  seed.ts                  # generates the full seeded dataset (hero + filler)
-  seed/                    # seed helpers: RNG, company pool, content templates
+  seed.ts                  # generates the full seeded dataset (hero + filler + backlog)
+  seed/                    # seed helpers: RNG, company pool, templates, backlog.ts (Phase 3)
 src/
   proxy.ts                 # Next 16 middleware — auth gate (lives under src/, not repo root)
   app/                      # App Router routes
@@ -155,7 +192,9 @@ src/
       dashboard/
       deals/[dealId]/
       clients/[clientId]/
-      intelligence/
+      intelligence/         # feed
+      intelligence/review/   # AI Review Center (Phase 3)
+      intelligence/scan/     # Run Scan + scan history + Email Activity (Phase 3)
       tasks/
       pipeline/
       calendar/
@@ -172,15 +211,18 @@ src/
     data/                   # repository interfaces (types.ts) + prisma-repository.ts (live)
                              # + demo-repository.ts (fixtures — seed source, not active)
     actions/mutations.ts    # Server Actions: stage/status/notification/review mutations + audit log
-    ai/                     # AIProvider interface + Demo/Anthropic/OpenAI implementations
-    email/                  # EmailProvider interface + implementations (planned)
+    actions/pipeline-actions.ts # Server Actions: triggerEmailScan, accept/rejectExtraction (Phase 3)
+    ai/                     # AIProvider interface, extraction-schema.ts (Zod), extractors.ts (pure
+                             # helpers), confidence-policy.ts, prompts/, Demo/Anthropic/OpenAI impls
+    email/                  # EmailProvider interface + Demo (live) / Gmail / MicrosoftGraph impls
+    pipeline/                # the Phase 3 pipeline — see PHASE3_EMAIL_INTELLIGENCE.md §1
     auth/                   # Auth.js config (config.ts), Server Actions (actions.ts)
     search.ts search-query.ts  # DB-backed search + its pure query parser
     insights.ts             # client relationship-intelligence bullet computation
     format.ts               # currency/date formatting helpers
   types/                    # shared domain types mirrored from Prisma
 tests/
-  unit/                     # Vitest — pure functions (format, search-query)
+  unit/                     # Vitest — pure functions (format, search-query, pipeline extraction)
   integration/               # Vitest — against the real seeded Postgres database
   e2e/                        # Playwright — full-app smoke test
 ```
