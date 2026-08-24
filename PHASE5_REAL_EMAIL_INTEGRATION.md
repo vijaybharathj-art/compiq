@@ -413,10 +413,18 @@ Stated plainly, not silently dropped:
    the deployment's environment (see `.env.example`).
 4. Generate and set `EMAIL_TOKEN_ENCRYPTION_KEY` (`openssl rand -base64
    32`) — required before any Connect click will succeed.
-5. Run the pending migration if it hasn't been applied yet:
-   `npx prisma migrate deploy` (or the manual `prisma db execute` path
-   documented in `ARCHITECTURE.md` if the deployment can't run interactive
-   migrations).
+5. Migrations apply automatically on deploy — `package.json`'s `build`
+   script is `prisma migrate deploy && next build`, so a normal Vercel
+   deployment applies any pending migration before building. Nothing extra
+   to run by hand. (This was added after a real incident: a Vercel
+   deployment whose Postgres `DATABASE_URL` env var was marked
+   "Sensitive" — which Vercel makes permanently unretrievable, even via
+   `vercel env pull` — made a manual `prisma migrate deploy` from a local
+   machine impossible, since there was no way to get the connection string
+   back out. Running the migration inside the build, where Vercel injects
+   the real env var value regardless of its dashboard visibility, sidesteps
+   that entirely and fixes it for every future migration too, not just
+   this one.)
 6. Sign in, go to Settings → Email, click Connect on Gmail or Microsoft
    365, complete the real consent screen.
 7. On return (`?connected=1`), click **Sync Now**. Watch the sync history

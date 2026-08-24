@@ -206,6 +206,20 @@ decisions yourself and document them"):
     new sync engine could call the identical Phase 3 code path. This is
     the concrete mechanism behind "provider differences end at
     normalization" — everything after ingestion is one pipeline, not two.
+27. **The Vercel build script runs `prisma migrate deploy` before
+    `next build`** (`package.json`: `"build": "prisma migrate deploy &&
+    next build"`), rather than expecting a human to run migrations by hand
+    against production. This was added reactively after a real deployment
+    incident: the production `DATABASE_URL` had been saved to Vercel as a
+    "Sensitive" env var, which Vercel makes permanently unretrievable —
+    not from the dashboard, not from `vercel env pull` — so there was no
+    way to run `prisma migrate deploy` from a local machine at all once
+    that value existed only inside Vercel. Running the migration inside
+    the build step sidesteps this, since Vercel injects the real env var
+    value into the build regardless of its dashboard visibility, and fixes
+    the problem permanently rather than for one deployment. `migrate
+    deploy` is safe to run on every build: it only applies pending
+    migrations and no-ops cleanly if the schema is already current.
 
 ## 3. Provider abstractions
 
