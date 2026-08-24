@@ -55,7 +55,7 @@ export default async function IntelligencePage({
                   ) : (
                     <div>
                       {filtered.map((item) => (
-                        <IntelligenceFeedItem key={item.id} item={item} />
+                        <IntelligenceFeedItem key={item.id} item={item} showReviewActions />
                       ))}
                     </div>
                   )}

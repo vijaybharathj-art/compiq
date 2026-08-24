@@ -222,6 +222,8 @@ export interface Opportunity {
   createdAt: string;
 }
 
+export type IntelligenceReviewStatus = "NEW" | "REVIEWED" | "DISMISSED";
+
 export interface IntelligenceItem {
   id: string;
   category: IntelligenceCategory;
@@ -233,4 +235,5 @@ export interface IntelligenceItem {
   confidencePercent?: number;
   evidence?: Evidence;
   occurredAt: string; // ISO
+  reviewStatus?: IntelligenceReviewStatus;
 }

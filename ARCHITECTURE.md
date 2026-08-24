@@ -10,10 +10,12 @@
 | Charts | Recharts | portfolio value, stage funnels, sparklines |
 | Motion | Framer Motion | used sparingly — feed item entry, panel transitions |
 | Backend | Next.js Route Handlers + Server Actions | co-located with the frontend; see §2 for why FastAPI was not chosen |
-| ORM | Prisma 7 (`prisma-client` generator) + `@prisma/adapter-pg` | schema is the durable source of truth even though Demo Mode doesn't connect to it yet |
-| Database | PostgreSQL | production target |
-| Auth | Auth.js (NextAuth v5) | Google + Microsoft Entra ID (Azure AD) providers |
+| ORM | Prisma 7 (`prisma-client` generator) + `@prisma/adapter-pg` | schema is the durable source of truth; **live in Phase 1** — see §2.7 |
+| Database | PostgreSQL | live and seeded in this environment |
+| Auth | Auth.js (NextAuth v5) | Credentials-based demo login **live**; Google + Microsoft Entra ID planned |
+| Drag-and-drop | `@dnd-kit/core` | Pipeline board (deal stage) and Task board (status) |
 | Validation | Zod | server action / route handler input validation |
+| Testing | Vitest (unit + DB integration) + Playwright (`@playwright/test`, e2e smoke) | see §6 |
 
 ## 2. Decision log
 
@@ -27,13 +29,18 @@ decisions yourself and document them"):
    long-running Python worker (e.g. a heavier NLP pipeline), it can be
    introduced as a separate service behind the same `AIProvider` interface
    without touching the frontend.
-2. **Demo Mode ships without a live Postgres.** No database is provisioned
-   in this environment. Rather than block the UI, `src/lib/data/` defines
-   repository interfaces (`DealRepository`, `ClientRepository`,
-   `TaskRepository`, `IntelligenceRepository`, …) with an in-memory fixture
-   implementation. The Prisma schema and a `prisma-repository.ts` (planned,
-   documented, not yet implemented) will satisfy the same interfaces for
-   production. No page imports fixtures directly.
+2. **Repository interface first, two implementations.** `src/lib/data/`
+   defines repository interfaces (`DealRepository`, `ClientRepository`,
+   `TaskRepository`, `IntelligenceRepository`, `DashboardRepository`,
+   `ReferenceRepository`, `AuditLogRepository`, `NotificationRepository`) in
+   `types.ts`. Phase 0 shipped only `demo-repository.ts` (in-memory
+   fixtures) because no database was provisioned; Phase 1 provisions a real
+   Postgres and adds `prisma-repository.ts`, which `src/lib/data/index.ts`
+   now exports as the active implementation. `demo-repository.ts` stays in
+   the codebase — it's the seed script's source data (`prisma/seed.ts`
+   imports the same fixtures directly) and a reference implementation of
+   the interfaces — but no page reads from it at runtime. No page imports
+   fixtures directly either way; everything goes through `./index`.
 3. **Money as integer minor units.** All monetary fields are `BigInt`
    minor-unit integers (e.g. cents) plus an ISO currency code, never
    floating point, to avoid rounding artifacts on deal values in the
@@ -48,6 +55,43 @@ decisions yourself and document them"):
 6. **AI extraction runs server-side only.** Nothing in `AI_EXTRACTION_SPEC.md`
    or the provider abstraction is reachable from client bundles; API keys
    never leave the server.
+7. **Phase 1 "Authentication" is a Credentials demo login, not real OAuth.**
+   The execution brief's flow diagram opens with "Authentication →
+   Dashboard" but explicitly defers Gmail/Microsoft OAuth to a later phase.
+   `src/lib/auth/config.ts` adds a `Credentials` provider ("continue as
+   {banker}") backed by seeded `User` rows, JWT session strategy, gated by
+   `src/proxy.ts` (Next 16's renamed `middleware.ts` — note it lives under
+   `src/`, sibling to `src/app`, matching this project's `src/` layout).
+   Real Google/Microsoft OAuth providers stay configured in the same file
+   for when credentials exist; nothing about the Credentials provider
+   blocks wiring them in later.
+8. **`IntelligenceEvent` is a first-class table, not a computed view.** The
+   Intelligence Feed / dashboard "Today's Intelligence" needs persisted
+   `reviewStatus` (Mark reviewed / Dismiss) and a stable id per item, so
+   `prisma/schema.prisma` has a dedicated `IntelligenceEvent` model
+   (category, dealId?, clientId?, headline, delta, confidence,
+   sourceEmailId?, reviewStatus) rather than deriving feed rows on the fly
+   from `DealEvent`/`Task`/`Opportunity` at read time. `DealEvent` remains
+   the deal timeline's source of truth; `IntelligenceEvent` is the
+   AI-surfaced-signal source of truth — the two overlap in content for
+   hero-narrative deals but serve different UI surfaces.
+9. **`@dnd-kit/core` for Pipeline/Task board drag-and-drop.** Chosen over
+   hand-rolled HTML5 drag events for accessibility (keyboard support,
+   screen-reader announcements) and pointer-based touch support. Each
+   `DndContext` is given an explicit `id` prop — without it, `@dnd-kit`
+   generates `aria-describedby` ids from a module-level counter that isn't
+   stable between SSR and the client's first render, causing a hydration
+   mismatch.
+10. **Search parsing lives in its own module (`search-query.ts`) apart from
+    the Prisma-querying code (`search.ts`).** The parser is pure (no DB
+    import) so it's unit-testable without a database connection; `search.ts`
+    imports it and adds the Prisma `WHERE` construction.
+11. **Every mutation is a Server Action, not a route handler**, colocated
+    in `src/lib/actions/mutations.ts`, each requiring an authenticated
+    session and writing an `AuditLog` row before returning. Drag-and-drop
+    UIs apply an optimistic local update, call the action, then
+    `router.refresh()` to reconcile with the server; on failure they revert
+    to the last known-good state and show an inline error.
 
 ## 3. Provider abstractions
 
@@ -79,20 +123,28 @@ interface AIProvider {
 }
 ```
 
-Implementations: `AnthropicProvider`, `OpenAIProvider`, both behind
-`getAIProvider()` reading `AI_PROVIDER` env var. **Status: interfaces
-scaffolded with typed contracts matching `AI_EXTRACTION_SPEC.md`; no model
-calls are wired in this stage** — Demo Mode's Intelligence Feed uses
-pre-computed fixture output that has the identical shape the real pipeline
-would produce, so swapping in a live provider changes zero UI code.
+Implementations: `DemoExtractionProvider` (live — a rule-based, no-API-key
+implementation using keyword/regex heuristics for relevance, dollar
+amounts, risk/opportunity signals; used by `prisma/seed.ts` to generate the
+confidence scores and evidence backing the seeded `AiExtraction` /
+`IntelligenceEvent` rows), `AnthropicProvider`, `OpenAIProvider` (both
+stubbed, throw with a `PLANNED INTEGRATION` message). All three sit behind
+`getAIProvider()` reading `AI_PROVIDER` env var (default `"demo"`). Swapping
+`AnthropicProvider`/`OpenAIProvider` in for real extraction changes zero UI
+code — the Intelligence Feed already reads `IntelligenceEvent` rows with
+the identical shape either path produces.
 
 ## 4. Directory layout
 
 ```
 prisma/
   schema.prisma            # production DB model (see DATABASE_SCHEMA.md)
+  seed.ts                  # generates the full seeded dataset (hero + filler)
+  seed/                    # seed helpers: RNG, company pool, content templates
 src/
+  proxy.ts                 # Next 16 middleware — auth gate (lives under src/, not repo root)
   app/                      # App Router routes
+    login/                  # Credentials demo login
     (app)/                  # authenticated shell: sidebar + topbar layout
       dashboard/
       deals/[dealId]/
@@ -103,18 +155,28 @@ src/
       calendar/
       search/
       settings/ integrations/ audit-log/
-    api/                    # route handlers (webhooks, health)
+      loading.tsx error.tsx # shared loading/error boundaries for the whole section
+    api/auth/[...nextauth]/ # NextAuth route handlers
+    not-found.tsx global-error.tsx
   components/
     ui/                     # shadcn primitives
-    layout/                 # sidebar, topbar, shell
-    dashboard/ deals/ clients/ intelligence/ tasks/  # feature components
+    layout/                 # sidebar, topbar, mobile-nav (drawer), notifications-menu
+    dashboard/ deals/ clients/ intelligence/ tasks/ pipeline/  # feature components
   lib/
-    data/                   # repository interfaces + demo (fixture) impl
-    ai/                     # AIProvider interface + implementations
-    email/                  # EmailProvider interface + implementations
-    auth/                   # Auth.js config, RBAC helpers
+    data/                   # repository interfaces (types.ts) + prisma-repository.ts (live)
+                             # + demo-repository.ts (fixtures — seed source, not active)
+    actions/mutations.ts    # Server Actions: stage/status/notification/review mutations + audit log
+    ai/                     # AIProvider interface + Demo/Anthropic/OpenAI implementations
+    email/                  # EmailProvider interface + implementations (planned)
+    auth/                   # Auth.js config (config.ts), Server Actions (actions.ts)
+    search.ts search-query.ts  # DB-backed search + its pure query parser
+    insights.ts             # client relationship-intelligence bullet computation
     format.ts               # currency/date formatting helpers
   types/                    # shared domain types mirrored from Prisma
+tests/
+  unit/                     # Vitest — pure functions (format, search-query)
+  integration/               # Vitest — against the real seeded Postgres database
+  e2e/                        # Playwright — full-app smoke test
 ```
 
 ## 5. Security boundaries
@@ -122,9 +184,14 @@ src/
 See `SECURITY.md` for the full model; architecturally: every repository
 method takes an `organizationId` and every query is scoped by it, so
 cross-tenant leakage requires an explicit bypass rather than an omission.
+`src/proxy.ts` gates every route except `/login` and `/api/auth/*` behind a
+session.
 
 ## 6. Testing & verification gates
 
 Before any stage is marked done: `npm run lint`, `npx tsc --noEmit`,
-`npm run build`. Prisma schema is checked with `prisma validate` +
-`prisma generate` (no live DB required for either).
+`npm test` (Vitest unit + database integration tests — requires
+`DATABASE_URL` and a seeded database), `npm run test:e2e` (Playwright
+smoke test — requires the dev server and a seeded database), `npm run
+build`. Prisma schema is checked with `prisma validate` + `prisma
+generate` (no live DB required for either).

@@ -22,8 +22,12 @@ changes.
 - **User** — id, email, name, image, authProvider, createdAt.
 - **Organization** — id, name, slug, plan, createdAt.
 - **OrganizationMember** — userId, organizationId, role (`OWNER | ADMIN |
-  BANKER | ANALYST | VIEWER`), team (`MA | ECM | DCM | LEV_FIN |
-  RESTRUCTURING | PRIVATE_CAPITAL | ADVISORY`), joinedAt.
+  BANKER | ANALYST | VIEWER`), team (`MA | ECM | DCM | LEVERAGED_FINANCE |
+  RESTRUCTURING | PRIVATE_CAPITAL | ADVISORY`), title (job title, e.g.
+  "Vice President, DCM" — display-only, distinct from `role`'s access
+  level), joinedAt. `Account`/`Session` are the standard Auth.js adapter
+  tables for the OAuth path; the live Credentials demo login uses JWT
+  sessions and doesn't populate them.
 
 ### CRM core
 - **Client** — organizationId, name, relationshipStatus (`ACTIVE |
@@ -93,6 +97,14 @@ from one).
   REJECTED | INFO_ONLY`), createdAt.
 - **AiExtractionEvidence** — extractionId, emailId, quotedExcerpt,
   senderName, sentAt — what renders in the evidence popover.
+- **IntelligenceEvent** — organizationId, category (`DEAL_CHANGE |
+  CLIENT_ACTIVITY | TASK | OPPORTUNITY | RISK | IMPORTANT_EMAIL`), dealId?,
+  clientId?, headline, detail?, deltaFrom?/deltaTo?, confidencePercent?,
+  sourceEmailId?, aiExtractionId?, reviewStatus (`NEW | REVIEWED |
+  DISMISSED`), occurredAt, createdAt. Backs the Intelligence Feed and
+  dashboard "Today's Intelligence" as first-class rows (not a computed
+  view) so Mark-reviewed/Dismiss actions have something to persist against.
+  Added in Phase 1 alongside the live database — see ARCHITECTURE.md §2.8.
 
 ### Work
 - **Task** — organizationId, dealId?, clientId?, title, description,
@@ -129,7 +141,24 @@ Deal 1—* AiExtraction 1—* AiExtractionEvidence
 EmailAccount 1—* EmailThread 1—* Email 1—* EmailAttachment
 Email 1—* AiExtraction
 Client 1—* Opportunity
+Deal 1—* IntelligenceEvent   (also Client 1—*, Email 1—*, AiExtraction 1—*)
 ```
+
+## Reproducing the database
+
+```bash
+npx prisma migrate dev   # applies prisma/migrations/ to DATABASE_URL
+npx tsx prisma/seed.ts   # truncates app tables, then repopulates everything
+# equivalently: npm run db:seed (after migrating)
+```
+
+`prisma/seed.ts` is idempotent — it truncates all application tables before
+inserting, so re-running it always produces the same dataset (10 clients,
+20 companies, 25 deals, 100+ emails, 50+ intelligence events, 40+ tasks,
+100+ timeline events). It reuses `src/lib/data/fixtures/*` for six
+hand-curated "hero" deals (Falcon, Atlas, Orion, Phoenix, Everest, Apollo)
+and generates the rest programmatically via `prisma/seed/` helpers (seeded
+RNG, a 20-company pool, email/task content templates).
 
 ## Why Prisma 7 specifics matter here
 

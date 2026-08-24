@@ -5,7 +5,7 @@ import { getDealEvents } from "./fixtures/deal-events";
 import { getSector, sectors } from "./fixtures/sectors";
 import { getTasksForDeal, tasks } from "./fixtures/tasks";
 import { getOpportunitiesForClient, opportunities } from "./fixtures/opportunities";
-import { intelligenceItems } from "./fixtures/intelligence";
+import { getIntelligenceForDeal, intelligenceItems } from "./fixtures/intelligence";
 import { auditLogEntries } from "./fixtures/audit-log";
 import type {
   AuditLogRepository,
@@ -108,6 +108,8 @@ export const demoDealRepository: DealRepository = {
       teamMembers,
       timeline: getDealEvents(id),
       tasks: getTasksForDeal(id),
+      emails: [],
+      intelligence: getIntelligenceForDeal(id),
     };
   },
 };

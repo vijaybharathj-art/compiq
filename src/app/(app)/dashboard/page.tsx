@@ -13,14 +13,14 @@ import { ActionRequiredCard } from "@/components/dashboard/action-required";
 import { NewOpportunitiesCard } from "@/components/dashboard/new-opportunities";
 import { IntelligenceFeedItem } from "@/components/intelligence/feed-item";
 import { Card, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
-import { dashboardRepository, CURRENT_USER_ID } from "@/lib/data";
-import { bankers } from "@/lib/data/fixtures/bankers";
+import { dashboardRepository } from "@/lib/data";
+import { auth } from "@/lib/auth/config";
 import { formatMoney } from "@/lib/format";
 import Link from "next/link";
 
 export default async function DashboardPage() {
-  const data = await dashboardRepository.get();
-  const currentUser = bankers.find((b) => b.id === CURRENT_USER_ID)!;
+  const [data, session] = await Promise.all([dashboardRepository.get(), auth()]);
+  const firstName = (session?.user?.name ?? session?.user?.email ?? "there").split(" ")[0]!;
 
   return (
     <div className="pb-10">
@@ -29,7 +29,7 @@ export default async function DashboardPage() {
         description="Your portfolio at a glance — what changed, what needs attention, what's next."
       />
 
-      <MorningBriefing data={data} firstName={currentUser.name.split(" ")[0]} />
+      <MorningBriefing data={data} firstName={firstName} />
 
       <div className="grid grid-cols-2 gap-3 px-8 pt-6 sm:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Active Deals" value={String(data.stats.activeDeals)} icon={Briefcase} />

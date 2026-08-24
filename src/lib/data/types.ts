@@ -29,12 +29,26 @@ export interface DealListItem extends Deal {
   sectorName: string;
 }
 
+export interface DealEmailView {
+  id: string;
+  fromName: string;
+  fromAddress: string;
+  toAddresses: string[];
+  subject: string;
+  bodyText: string;
+  receivedAt: string;
+  relevance: string;
+  aiInterpretation?: { summary: string; confidencePercent: number };
+}
+
 export interface DealDetail extends DealListItem {
   client: Client;
   leadBanker: Banker;
   teamMembers: { banker: Banker; role: string }[];
   timeline: DealEvent[];
   tasks: Task[];
+  emails: DealEmailView[];
+  intelligence: IntelligenceItem[];
 }
 
 export interface DealFilters {
@@ -122,4 +136,17 @@ export interface AuditLogEntryView {
 
 export interface AuditLogRepository {
   list(): Promise<AuditLogEntryView[]>;
+}
+
+export interface NotificationView {
+  id: string;
+  title: string;
+  body?: string;
+  linkHref?: string;
+  readAt?: string;
+  createdAt: string;
+}
+
+export interface NotificationRepository {
+  listForUser(userId: string): Promise<NotificationView[]>;
 }

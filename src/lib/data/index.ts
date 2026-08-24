@@ -1,26 +1,29 @@
-// Single import surface for all page/component code. Currently wired to
-// the in-memory Demo Mode repositories — see CLAUDE.md and ARCHITECTURE.md.
-// A future prisma-repository.ts satisfying the same interfaces (types.ts)
-// is the only file that needs to change to go live.
+// Single import surface for all page/component code. Wired to the
+// Postgres-backed repositories (prisma-repository.ts) — see CLAUDE.md and
+// ARCHITECTURE.md. demo-repository.ts (in-memory fixtures) remains in the
+// codebase as the seed source of truth and as a documented fallback
+// reference; it is no longer the active implementation now that a real
+// database is provisioned (prisma/seed.ts populates it).
 
 import {
-  demoAuditLogRepository,
-  demoClientRepository,
-  demoDashboardRepository,
-  demoDealRepository,
-  demoIntelligenceRepository,
-  demoReferenceRepository,
-  demoTaskRepository,
-} from "./demo-repository";
+  prismaAuditLogRepository,
+  prismaClientRepository,
+  prismaDashboardRepository,
+  prismaDealRepository,
+  prismaIntelligenceRepository,
+  prismaNotificationRepository,
+  prismaReferenceRepository,
+  prismaTaskRepository,
+} from "./prisma-repository";
 
-export const dealRepository = demoDealRepository;
-export const clientRepository = demoClientRepository;
-export const taskRepository = demoTaskRepository;
-export const intelligenceRepository = demoIntelligenceRepository;
-export const dashboardRepository = demoDashboardRepository;
-export const referenceRepository = demoReferenceRepository;
-export const auditLogRepository = demoAuditLogRepository;
+export const dealRepository = prismaDealRepository;
+export const clientRepository = prismaClientRepository;
+export const taskRepository = prismaTaskRepository;
+export const intelligenceRepository = prismaIntelligenceRepository;
+export const dashboardRepository = prismaDashboardRepository;
+export const referenceRepository = prismaReferenceRepository;
+export const auditLogRepository = prismaAuditLogRepository;
+export const notificationRepository = prismaNotificationRepository;
 
 export * from "./types";
-export { CURRENT_USER_ID } from "./fixtures/bankers";
 export { bankingServices, workflowsByService } from "./fixtures/workflows";

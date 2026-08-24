@@ -13,6 +13,8 @@ import {
   DealTeamPanel,
 } from "@/components/deals/deal-facts";
 import { DealTasksList } from "@/components/deals/deal-tasks-list";
+import { DealEmailsList } from "@/components/deals/deal-emails-list";
+import { DealIntelligencePanel } from "@/components/deals/deal-intelligence-panel";
 import { dealRepository } from "@/lib/data";
 import { getBankingService } from "@/lib/data/fixtures/workflows";
 import { formatDate, formatEnumLabel, formatMoney } from "@/lib/format";
@@ -91,6 +93,14 @@ export default async function DealDetailPage({
                   </span>
                 )}
               </TabsTrigger>
+              <TabsTrigger value="emails">
+                Emails
+                {deal.emails.length > 0 && (
+                  <span className="ml-1 rounded-full bg-surface-raised px-1.5 text-[10px] tabular-nums">
+                    {deal.emails.length}
+                  </span>
+                )}
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="timeline">
               <Card className="gap-0 py-4">
@@ -102,10 +112,16 @@ export default async function DealDetailPage({
                 <DealTasksList tasks={deal.tasks} />
               </Card>
             </TabsContent>
+            <TabsContent value="emails">
+              <Card className="gap-0">
+                <DealEmailsList emails={deal.emails} />
+              </Card>
+            </TabsContent>
           </Tabs>
         </div>
 
         <div className="flex flex-col gap-4">
+          <DealIntelligencePanel deal={deal} />
           <DealFactsPanel deal={deal} />
           <DealTeamPanel deal={deal} />
           <DealParticipantsPanel deal={deal} />

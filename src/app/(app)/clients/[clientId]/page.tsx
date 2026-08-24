@@ -12,7 +12,8 @@ import {
 import { IntelligenceFeedItem } from "@/components/intelligence/feed-item";
 import { EmptyState } from "@/components/shared/empty-state";
 import { clientRepository } from "@/lib/data";
-import { Radar } from "lucide-react";
+import { computeRelationshipInsights } from "@/lib/insights";
+import { Radar, Sparkles } from "lucide-react";
 
 const relationshipVariant = {
   ACTIVE: "positive",
@@ -29,6 +30,7 @@ export default async function ClientDetailPage({
   const { clientId } = await params;
   const client = await clientRepository.get(clientId);
   if (!client) notFound();
+  const insights = computeRelationshipInsights(client);
 
   return (
     <div className="pb-10">
@@ -79,6 +81,20 @@ export default async function ClientDetailPage({
         </div>
 
         <div className="flex flex-col gap-4">
+          <Card>
+            <CardHeader className="flex-row items-center gap-2 pb-1">
+              <Sparkles className="size-4 text-accent" />
+              <CardTitle>Relationship Intelligence</CardTitle>
+            </CardHeader>
+            <ul className="flex flex-col gap-2 px-5 pb-4 pt-1">
+              {insights.map((insight, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm text-foreground">
+                  <span className="mt-1.5 size-1 shrink-0 rounded-full bg-accent" />
+                  {insight}
+                </li>
+              ))}
+            </ul>
+          </Card>
           <ClientFactsPanel client={client} />
           <ClientContactsPanel client={client} />
           <ClientOpportunitiesPanel client={client} />

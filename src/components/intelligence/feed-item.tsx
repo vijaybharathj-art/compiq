@@ -12,6 +12,8 @@ import { Badge } from "@/components/ui/badge";
 import { ConfidenceBadge } from "@/components/shared/badges";
 import { EvidenceCitation } from "@/components/shared/evidence-citation";
 import { relativeTimeFromNow } from "@/lib/format";
+import { reviewIntelligenceEvent } from "@/lib/actions/mutations";
+import { cn } from "@/lib/utils";
 import type { IntelligenceCategory, IntelligenceItem } from "@/types/domain";
 
 const categoryConfig: Record<
@@ -28,8 +30,10 @@ const categoryConfig: Record<
 
 export function IntelligenceFeedItem({
   item,
+  showReviewActions = false,
 }: {
   item: IntelligenceItem & { dealCodename?: string; clientName?: string };
+  showReviewActions?: boolean;
 }) {
   const cfg = categoryConfig[item.category];
   const Icon = cfg.icon;
@@ -38,9 +42,15 @@ export function IntelligenceFeedItem({
     : item.clientId
       ? `/clients/${item.clientId}`
       : undefined;
+  const dismissed = item.reviewStatus === "DISMISSED";
 
   return (
-    <div className="group flex gap-3 border-b border-border-subtle px-5 py-4 last:border-0 animate-fade-in">
+    <div
+      className={cn(
+        "group flex gap-3 border-b border-border-subtle px-5 py-4 last:border-0 animate-fade-in",
+        dismissed && "opacity-50",
+      )}
+    >
       <div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-surface-raised">
         <Icon className="size-3.5 text-muted-foreground" />
       </div>
@@ -55,6 +65,8 @@ export function IntelligenceFeedItem({
           <span className="text-xs text-muted-foreground">
             {relativeTimeFromNow(item.occurredAt, new Date("2026-08-23T18:00:00Z"))}
           </span>
+          {item.reviewStatus === "REVIEWED" && <Badge variant="positive">Reviewed</Badge>}
+          {dismissed && <Badge variant="outline">Dismissed</Badge>}
         </div>
         <p className="mt-1.5 text-sm font-medium text-foreground">{item.headline}</p>
         {item.detail && (
@@ -77,6 +89,20 @@ export function IntelligenceFeedItem({
             >
               Open {item.dealId ? "deal" : "client"} →
             </Link>
+          )}
+          {showReviewActions && item.reviewStatus !== "REVIEWED" && (
+            <form action={reviewIntelligenceEvent.bind(null, item.id, "REVIEWED")}>
+              <button type="submit" className="text-xs text-muted-foreground hover:text-positive">
+                Mark reviewed
+              </button>
+            </form>
+          )}
+          {showReviewActions && !dismissed && (
+            <form action={reviewIntelligenceEvent.bind(null, item.id, "DISMISSED")}>
+              <button type="submit" className="text-xs text-muted-foreground hover:text-negative">
+                Dismiss
+              </button>
+            </form>
           )}
         </div>
       </div>

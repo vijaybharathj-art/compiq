@@ -84,15 +84,16 @@ model Organization {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  members       OrganizationMember[]
-  clients       Client[]
-  companies     Company[]
-  deals         Deal[]
-  dealWorkflows DealWorkflow[]
-  tasks         Task[]
-  opportunities Opportunity[]
-  emailAccounts EmailAccount[]
-  auditLogs     AuditLog[]
+  members            OrganizationMember[]
+  clients            Client[]
+  companies          Company[]
+  deals              Deal[]
+  dealWorkflows      DealWorkflow[]
+  tasks              Task[]
+  opportunities      Opportunity[]
+  emailAccounts      EmailAccount[]
+  auditLogs          AuditLog[]
+  intelligenceEvents IntelligenceEvent[]
 
   @@map("organizations")
 }
@@ -103,6 +104,7 @@ model OrganizationMember {
   userId         String
   role           OrgRole      @default(BANKER)
   team           BankingTeam?
+  title          String?
   joinedAt       DateTime     @default(now())
 
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -159,13 +161,14 @@ model Client {
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
-  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sector        Sector?       @relation(fields: [sectorId], references: [id])
-  contacts      Contact[]
-  deals         Deal[]
-  tasks         Task[]
-  opportunities Opportunity[]
-  emailThreads  EmailThread[]
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sector             Sector?             @relation(fields: [sectorId], references: [id])
+  contacts           Contact[]
+  deals              Deal[]
+  tasks              Task[]
+  opportunities      Opportunity[]
+  emailThreads       EmailThread[]
+  intelligenceEvents IntelligenceEvent[]
 
   @@index([organizationId])
   @@map("clients")
@@ -302,14 +305,15 @@ model Deal {
   leadBanker             User?                @relation("DealLeadBanker", fields: [leadBankerId], references: [id])
   originatingOpportunity Opportunity?         @relation(fields: [originatingOpportunityId], references: [id])
 
-  team          DealTeamMember[]
-  participants  DealParticipant[]
-  events        DealEvent[]
-  tasks         Task[]
-  documents     Document[]
-  meetings      Meeting[]
-  aiExtractions AiExtraction[]
-  emailThreads  EmailThread[]
+  team               DealTeamMember[]
+  participants       DealParticipant[]
+  events             DealEvent[]
+  tasks              Task[]
+  documents          Document[]
+  meetings           Meeting[]
+  aiExtractions      AiExtraction[]
+  emailThreads       EmailThread[]
+  intelligenceEvents IntelligenceEvent[]
 
   @@index([organizationId])
   @@index([clientId])
@@ -508,13 +512,14 @@ model Email {
   relevance         EmailRelevance @default(NOT_RELEVANT)
   relevanceScore    Float?
 
-  thread        EmailThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  attachments   EmailAttachment[]
-  aiExtractions AiExtraction[]
-  dealEvents    DealEvent[]
-  tasks         Task[]
-  meetings      Meeting[]
-  opportunities Opportunity[]
+  thread             EmailThread         @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments        EmailAttachment[]
+  aiExtractions      AiExtraction[]
+  dealEvents         DealEvent[]
+  tasks              Task[]
+  meetings           Meeting[]
+  opportunities      Opportunity[]
+  intelligenceEvents IntelligenceEvent[]
 
   @@unique([threadId, providerMessageId])
   @@index([threadId])
@@ -555,10 +560,11 @@ model AiExtraction {
   appliedStatus     ExtractionAppliedStatus @default(INFO_ONLY)
   createdAt         DateTime                @default(now())
 
-  email      Email                  @relation(fields: [emailId], references: [id], onDelete: Cascade)
-  deal       Deal?                  @relation(fields: [dealId], references: [id])
-  evidence   AiExtractionEvidence[]
-  dealEvents DealEvent[]
+  email              Email                  @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  deal               Deal?                  @relation(fields: [dealId], references: [id])
+  evidence           AiExtractionEvidence[]
+  dealEvents         DealEvent[]
+  intelligenceEvents IntelligenceEvent[]
 
   @@index([emailId])
   @@index([dealId])
@@ -714,6 +720,56 @@ model Notification {
 
   @@index([userId])
   @@map("notifications")
+}
+
+// The Intelligence Feed / dashboard "Today's Intelligence" are backed by
+// this table — one row per detected change, signal, or risk, each carrying
+// the confidence/source/review-status fields required by AI_EXTRACTION_SPEC.md
+// §7-8. Populated today by the seed script (via DemoExtractionProvider);
+// the real pipeline (AI_EXTRACTION_SPEC.md §1) writes the same shape.
+model IntelligenceEvent {
+  id                String                   @id @default(cuid())
+  organizationId    String
+  category          IntelligenceCategory
+  dealId            String?
+  clientId          String?
+  headline          String
+  detail            String?
+  deltaFrom         String?
+  deltaTo           String?
+  confidencePercent Int?
+  sourceEmailId     String?
+  aiExtractionId    String?
+  reviewStatus      IntelligenceReviewStatus @default(NEW)
+  occurredAt        DateTime
+  createdAt         DateTime                 @default(now())
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deal         Deal?         @relation(fields: [dealId], references: [id])
+  client       Client?       @relation(fields: [clientId], references: [id])
+  sourceEmail  Email?        @relation(fields: [sourceEmailId], references: [id])
+  aiExtraction AiExtraction? @relation(fields: [aiExtractionId], references: [id])
+
+  @@index([organizationId])
+  @@index([dealId])
+  @@index([clientId])
+  @@index([category])
+  @@map("intelligence_events")
+}
+
+enum IntelligenceCategory {
+  DEAL_CHANGE
+  CLIENT_ACTIVITY
+  TASK
+  OPPORTUNITY
+  RISK
+  IMPORTANT_EMAIL
+}
+
+enum IntelligenceReviewStatus {
+  NEW
+  REVIEWED
+  DISMISSED
 }
 
 model AuditLog {

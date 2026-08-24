@@ -49,14 +49,23 @@ Finance, Restructuring, Private Capital, Advisory.
    interaction).
 5. **Intelligence Feed** — categorized (All / Deal Changes / Client
    Activity / Tasks / Opportunities / Risks / Important Emails), each item
-   traceable to source evidence with a confidence score.
+   traceable to source evidence with a confidence score. **Live in Phase 1**:
+   Mark reviewed / Dismiss persist `IntelligenceEvent.reviewStatus` to the
+   database via a Server Action.
 6. **Tasks** — board (To Do / In Progress / Completed / Dismissed) of
    AI-generated and manually created tasks with owner, priority, due date,
-   source email, confidence.
-7. **Calendar**, **Search**, **Settings / Integrations / Audit Log** —
-   scaffolded navigation targets; Search and Calendar ship with working
-   basic implementations in v1, natural-language search is a documented
-   planned extension.
+   source email, confidence. **Live in Phase 1**: drag-and-drop between
+   columns (`@dnd-kit`) persists `Task.status` immediately, with optimistic
+   UI and revert-on-failure.
+7. **Calendar**, **Search**, **Settings / Integrations / Audit Log** — Search
+   is **live in Phase 1**: it runs real database queries (deals, clients,
+   companies, tasks, emails) and parses basic natural-language-like patterns
+   (dollar amounts, stage names, risk levels, service codes) via a dedicated
+   pure parser (`search-query.ts`); full semantic/NL search remains a
+   documented planned extension. Calendar ships a working basic
+   implementation. Settings/Integrations/Audit Log are live read screens
+   backed by the database (see §11); connecting a real mailbox stays
+   disabled pending OAuth credentials.
 
 ## 5. Banking services
 
@@ -119,20 +128,32 @@ financing", "interested in acquiring", etc.) generate **Potential
 Opportunity** cards, never presented as confirmed fact — always hedged
 ("Potential opportunity detected").
 
-## 11. Demo Mode
+## 11. Demo Mode → Phase 1: a live seeded database
 
 Before any real Gmail/Outlook connection, the full UI and workflow run
-against a realistic fictional dataset: six example deals (Project Falcon,
-Atlas, Orion, Phoenix, Everest, Apollo), their clients, emails, tasks,
-timeline events, and intelligence-feed items. See `ARCHITECTURE.md` for how
-Demo Mode plugs into the same interfaces the live system will use.
+against a realistic fictional dataset — but as of Phase 1 that dataset lives
+in a real PostgreSQL database, not in-memory fixtures. `prisma/seed.ts`
+populates it: six hand-curated "hero" deals matching the original product
+narrative (Project Falcon, Atlas, Orion, Phoenix, Everest, Apollo) plus
+programmatically generated "filler" deals, clients, and activity, built to
+minimum volumes (10 clients, 20 companies, 25 deals, 100+ emails, 50+
+intelligence events, 40+ tasks, 100+ timeline events) using a seeded RNG for
+reproducibility. Every page reads through the same repository interfaces
+(`src/lib/data/`) that a production deployment would use — nothing is
+hardcoded in a component. Sign-in is a Credentials-based "continue as
+{seeded banker}" flow (see `SECURITY.md` §1), not a real credential
+exchange. See `ARCHITECTURE.md` §2.2 and `DATABASE_SCHEMA.md` "Reproducing
+the database" for how it plugs into the same interfaces the live system
+(real OAuth + real mailbox ingestion) will use.
 
 ## 12. Non-goals for v1
 
 - Real Gmail/Microsoft Graph ingestion (interfaces are built and documented
   as a **planned integration**; no live OAuth credentials exist in this
   environment).
-- Natural-language semantic search (keyword search ships now; the search
-  layer is architected so NL search can be added without a rewrite).
+- Full semantic/NL search (a heuristic parser already recognizes deal names,
+  service codes, client names, dollar amounts, stage names, and risk levels
+  and queries the database live — see §4 item 7 — but true free-text
+  semantic search is a documented follow-up).
 - Admin-configurable workflow editor UI (the data model supports it; the
   editor screen is a documented follow-up).

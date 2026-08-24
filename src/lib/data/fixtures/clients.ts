@@ -148,6 +148,66 @@ export const clients: Client[] = [
       },
     ],
   },
+  {
+    id: "client-foxglove",
+    name: "Foxglove Biotech",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-healthcare",
+    headquarters: "Cambridge, MA",
+    website: "foxglovebiotech.example",
+    foundedYear: 2009,
+    primaryBankerId: "banker-schen",
+    lastInteractionAt: "2026-08-18T15:00:00Z",
+    contacts: [
+      {
+        id: "contact-foxglove-1",
+        name: "Julian Ferreira",
+        title: "Chief Executive Officer",
+        email: "j.ferreira@foxglovebiotech.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-reliance-grid",
+    name: "Reliance Grid Energy",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-energy",
+    headquarters: "Houston, TX",
+    website: "reliancegridenergy.example",
+    foundedYear: 1998,
+    primaryBankerId: "banker-jwhitfield",
+    lastInteractionAt: "2026-08-17T10:30:00Z",
+    contacts: [
+      {
+        id: "contact-reliance-1",
+        name: "Angela Kirov",
+        title: "Chief Financial Officer",
+        email: "a.kirov@reliancegridenergy.example",
+        isKeyContact: true,
+      },
+    ],
+  },
+  {
+    id: "client-cobalt",
+    name: "Cobalt Systems",
+    relationshipStatus: "ACTIVE",
+    sectorId: "sec-technology",
+    headquarters: "Austin, TX",
+    website: "cobaltsystems.example",
+    foundedYear: 2013,
+    primaryBankerId: "banker-panand",
+    lastInteractionAt: "2026-08-19T12:00:00Z",
+    contacts: [
+      {
+        id: "contact-cobalt-1",
+        name: "Derek Huang",
+        title: "Chief Financial Officer",
+        email: "d.huang@cobaltsystems.example",
+        isKeyContact: true,
+      },
+    ],
+  },
 ];
 
 export function getClient(id: string) {

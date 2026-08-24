@@ -2,9 +2,10 @@ import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { bankers, CURRENT_USER_ID } from "@/lib/data/fixtures/bankers";
+import { referenceRepository } from "@/lib/data";
 import { organization } from "@/lib/data/fixtures/organization";
-import { initials } from "@/lib/format";
+import { auth } from "@/lib/auth/config";
+import { formatEnumLabel, initials } from "@/lib/format";
 
 function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -15,8 +16,9 @@ function Fact({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-export default function SettingsPage() {
-  const currentUser = bankers.find((b) => b.id === CURRENT_USER_ID)!;
+export default async function SettingsPage() {
+  const [bankers, session] = await Promise.all([referenceRepository.bankers(), auth()]);
+  const currentUser = bankers.find((b) => b.id === session?.user?.id) ?? bankers[0]!;
 
   return (
     <div className="pb-10">
@@ -39,8 +41,8 @@ export default function SettingsPage() {
             </div>
             <div className="divide-y divide-border-subtle">
               <Fact label="Email" value={currentUser.email} />
-              <Fact label="Team" value={currentUser.team.replaceAll("_", " ")} />
-              <Fact label="Auth provider" value={<Badge variant="outline">Google (demo)</Badge>} />
+              <Fact label="Team" value={formatEnumLabel(currentUser.team)} />
+              <Fact label="Auth provider" value={<Badge variant="outline">Demo account</Badge>} />
             </div>
           </CardContent>
         </Card>
@@ -76,7 +78,7 @@ export default function SettingsPage() {
                       <p className="text-xs text-muted-foreground">{b.title}</p>
                     </div>
                   </div>
-                  <Badge variant="outline">{b.team.replaceAll("_", " ")}</Badge>
+                  <Badge variant="outline">{formatEnumLabel(b.team)}</Badge>
                 </li>
               ))}
             </ul>

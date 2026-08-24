@@ -48,7 +48,7 @@ export function ClientsTable({ clients }: { clients: ClientListItem[] }) {
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 px-8 py-4">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-4 md:px-8">
         <div className="relative w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -80,47 +80,78 @@ export function ClientsTable({ clients }: { clients: ClientListItem[] }) {
           <EmptyState icon={Users} title="No clients match these filters" />
         </div>
       ) : (
-        <div className="px-8 pb-10">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Client</TableHead>
-                <TableHead>Relationship</TableHead>
-                <TableHead>Sector</TableHead>
-                <TableHead className="text-right">Active Deals</TableHead>
-                <TableHead className="text-right">Total Value</TableHead>
-                <TableHead>Primary Banker</TableHead>
-                <TableHead>Last Interaction</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((client) => (
-                <TableRow key={client.id}>
-                  <TableCell className="font-medium">
-                    <Link href={`/clients/${client.id}`} className="hover:text-accent">
-                      {client.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={relationshipVariant[client.relationshipStatus]}>
-                      {client.relationshipStatus.charAt(0) +
-                        client.relationshipStatus.slice(1).toLowerCase()}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{client.sectorName}</TableCell>
-                  <TableCell className="text-right tabular-nums">{client.activeDealCount}</TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">
-                    {formatMoney({ amountMinorUnits: client.totalDealValueMinorUnits, currency: "USD" })}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{client.primaryBankerName}</TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">
-                    {formatDate(client.lastInteractionAt)}
-                  </TableCell>
+        <>
+          <div className="hidden px-8 pb-10 md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Relationship</TableHead>
+                  <TableHead>Sector</TableHead>
+                  <TableHead className="text-right">Active Deals</TableHead>
+                  <TableHead className="text-right">Total Value</TableHead>
+                  <TableHead>Primary Banker</TableHead>
+                  <TableHead>Last Interaction</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((client) => (
+                  <TableRow key={client.id}>
+                    <TableCell className="font-medium">
+                      <Link href={`/clients/${client.id}`} className="hover:text-accent">
+                        {client.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={relationshipVariant[client.relationshipStatus]}>
+                        {client.relationshipStatus.charAt(0) +
+                          client.relationshipStatus.slice(1).toLowerCase()}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{client.sectorName}</TableCell>
+                    <TableCell className="text-right tabular-nums">{client.activeDealCount}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">
+                      {formatMoney({ amountMinorUnits: client.totalDealValueMinorUnits, currency: "USD" })}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{client.primaryBankerName}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {formatDate(client.lastInteractionAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex flex-col gap-2.5 px-4 pb-10 md:hidden">
+            {filtered.map((client) => (
+              <Link
+                key={client.id}
+                href={`/clients/${client.id}`}
+                className="rounded-md border border-border bg-card p-3.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{client.name}</p>
+                    <p className="text-xs text-muted-foreground">{client.sectorName}</p>
+                  </div>
+                  <Badge variant={relationshipVariant[client.relationshipStatus]}>
+                    {client.relationshipStatus.charAt(0) +
+                      client.relationshipStatus.slice(1).toLowerCase()}
+                  </Badge>
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>
+                    {client.activeDealCount} active {client.activeDealCount === 1 ? "deal" : "deals"}
+                  </span>
+                  <span className="font-medium tabular-nums text-gold">
+                    {formatMoney({ amountMinorUnits: client.totalDealValueMinorUnits, currency: "USD" })}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );

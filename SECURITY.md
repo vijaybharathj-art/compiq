@@ -6,13 +6,25 @@ market-moving information.
 
 ## 1. Authentication
 
-- Auth.js (NextAuth v5) with **Google OAuth** and **Microsoft Entra ID
-  OAuth** only. No password auth, no credential storage — Tattava never
-  requests or stores a user's mailbox password.
-- Session strategy: database-backed sessions (not stateless JWT) so a
-  session can be revoked server-side (forced sign-out, deprovisioned org
-  member) without waiting for token expiry.
-- OAuth client secrets and NextAuth secret are read from environment
+- **Phase 1 status**: sign-in is a Credentials provider ("continue as
+  {seeded banker}") — explicitly a demo mechanism, not a real credential
+  exchange. `authorize()` looks up the selected user by id in the seeded
+  `User` table; no password or secret is ever collected, checked, or
+  stored. Session strategy is JWT (`AUTH_SECRET` env var), and
+  `src/proxy.ts` redirects any unauthenticated request (other than
+  `/login` and `/api/auth/*`) to the login page.
+- **Planned**: Auth.js (NextAuth v5) also has **Google OAuth** and
+  **Microsoft Entra ID OAuth** providers configured in the same
+  `src/lib/auth/config.ts` for when real client credentials exist — those
+  remain the only two production sign-in methods the product will offer.
+  Tattava will never request or store a user's mailbox password under
+  either path.
+- Once real OAuth is enabled, the plan is to move to database-backed
+  sessions (via `PrismaAdapter`, already wired but currently only
+  constructed when `DATABASE_URL` is present) so a session can be revoked
+  server-side (forced sign-out, deprovisioned org member) without waiting
+  for JWT expiry — see ARCHITECTURE.md §2.7.
+- OAuth client secrets and the NextAuth secret are read from environment
   variables only (`GOOGLE_CLIENT_ID/SECRET`, `MICROSOFT_CLIENT_ID/SECRET`,
   `AUTH_SECRET`) — never committed, never hardcoded. `.env.example`
   documents required variables with placeholder values only.
@@ -83,6 +95,8 @@ integration** in this stage — no live subscriptions exist yet.
 ## 8. Development data policy
 
 No real confidential banking data is used anywhere in this repository.
-Demo Mode data (`src/lib/data/fixtures/`) is entirely fictional — company
-names, deal values, and email content are invented for demonstration
-purposes only.
+The seeded dataset (`src/lib/data/fixtures/`, expanded by `prisma/seed.ts`
+into the live Postgres database) is entirely fictional — company names,
+deal values, and email content are invented for demonstration purposes
+only. The dev database itself is local to this environment and is never a
+target for real customer data.

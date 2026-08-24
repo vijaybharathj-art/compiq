@@ -57,6 +57,46 @@ export const bankers: Banker[] = [
     team: "MA",
     email: "daniel.ilyin@tattava-demo.bank",
   },
+  {
+    id: "banker-nahmed",
+    name: "Nora Ahmed",
+    initials: "NA",
+    title: "Vice President, ECM",
+    team: "ECM",
+    email: "nora.ahmed@tattava-demo.bank",
+  },
+  {
+    id: "banker-vlindqvist",
+    name: "Victor Lindqvist",
+    initials: "VL",
+    title: "Associate, DCM",
+    team: "DCM",
+    email: "victor.lindqvist@tattava-demo.bank",
+  },
+  {
+    id: "banker-ocastellano",
+    name: "Owen Castellano",
+    initials: "OC",
+    title: "Associate, Restructuring",
+    team: "RESTRUCTURING",
+    email: "owen.castellano@tattava-demo.bank",
+  },
+  {
+    id: "banker-miyer",
+    name: "Meera Iyer",
+    initials: "MI",
+    title: "Vice President, Private Capital",
+    team: "PRIVATE_CAPITAL",
+    email: "meera.iyer@tattava-demo.bank",
+  },
+  {
+    id: "banker-treyes",
+    name: "Thomas Reyes",
+    initials: "TR",
+    title: "Analyst, Advisory",
+    team: "FINANCIAL_ADVISORY",
+    email: "thomas.reyes@tattava-demo.bank",
+  },
 ];
 
 export const CURRENT_USER_ID = "banker-bharath";

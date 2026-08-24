@@ -147,11 +147,20 @@ interface AIProvider {
 ```
 
 `AnthropicProvider` and `OpenAIProvider` implement this against
-`AI_PROVIDER=anthropic|openai`. Prompts are versioned under
-`src/lib/ai/prompts/` and never embed org-specific data as few-shot
-examples — extraction context is passed as structured input, not baked
-into the prompt text, so no customer email content is retained as a
-"training example."
+`AI_PROVIDER=anthropic|openai`; both are stubbed (`PLANNED INTEGRATION`) —
+no live API keys exist in this environment. **Phase 1 ships a third, live
+implementation: `DemoExtractionProvider`** (`AI_PROVIDER=demo`, the
+default), a rule-based extractor using keyword/regex heuristics for
+relevance, dollar amounts, and risk/opportunity signals. It implements the
+exact same interface and is what `prisma/seed.ts` calls to generate the
+`confidencePercent`, `matchType`, and evidence excerpts on every seeded
+`AiExtraction`/`IntelligenceEvent` row — so the UI, confidence-scoring
+policy (§7), and evidence system (§8) all exercise real code paths today,
+with swapping in a real LLM provider changing zero downstream code. Prompts
+for the LLM-backed providers are versioned under `src/lib/ai/prompts/` and
+never embed org-specific data as few-shot examples — extraction context is
+passed as structured input, not baked into the prompt text, so no customer
+email content is retained as a "training example."
 
 ## 11. Data policy
 

@@ -28,23 +28,38 @@ banking workflows.
 ## Stack summary
 
 - Next.js (App Router, TypeScript, Turbopack) + Tailwind CSS v4 + shadcn/ui
-- Prisma ORM 7 (PostgreSQL via `@prisma/adapter-pg` driver adapter) — schema
-  is the production source of truth; **Demo Mode ships without a live
-  database** (see below)
-- Auth.js (NextAuth v5) — Google + Microsoft Entra ID OAuth
-- `EmailProvider` abstraction — `GmailProvider` / `OutlookProvider`
-- `AIProvider` abstraction — Anthropic / OpenAI implementations
+- Prisma ORM 7 (PostgreSQL via `@prisma/adapter-pg` driver adapter) — **the
+  live database is the active runtime** (see below), schema is the
+  production source of truth
+- Auth.js (NextAuth v5) — a Credentials-based demo login is live today
+  (`src/lib/auth/config.ts`); Google + Microsoft Entra ID OAuth are
+  scaffolded and planned (SECURITY.md §1)
+- `@dnd-kit/core` — Pipeline and Tasks board drag-and-drop
+- `EmailProvider` abstraction — `GmailProvider` / `OutlookProvider` (planned)
+- `AIProvider` abstraction — `DemoExtractionProvider` (live, rule-based,
+  used by the seed script) / Anthropic / OpenAI (planned)
 
-## Demo Mode is the default runtime today
+## Phase 1: Postgres is the live runtime
 
-There is no provisioned Postgres instance in this environment. Rather than
-block the whole UI on database infrastructure, the app runs against an
-**in-memory demo data layer** (`src/lib/data/`) that implements the exact
-same repository interfaces the Prisma-backed implementation will use
-(`src/lib/data/types.ts`). Swapping demo mode for live data later means
-writing one new file (`src/lib/data/prisma-repository.ts`) — no page or
-component code should change. Never let page/component code import demo
-fixtures directly; always go through `src/lib/data/index.ts`.
+A real PostgreSQL database is provisioned and seeded — `src/lib/data/`
+(`prisma-repository.ts`) is the active repository implementation behind
+`src/lib/data/index.ts`, backed by `prisma/schema.prisma` and populated by
+`prisma/seed.ts` (10 clients, 20 companies, 25 deals, 100+ emails, 50+
+intelligence events, 40+ tasks, 100+ timeline events — mixing hand-curated
+"hero" deals with programmatically generated volume). `src/lib/data/
+demo-repository.ts` (in-memory fixtures) remains in the codebase as the
+seed's source data and as a reference implementation of the same
+interfaces (`src/lib/data/types.ts`) — it is not the active runtime.
+
+**Local setup**: start Postgres, then run
+`npx prisma migrate dev && npx tsx prisma/seed.ts` (or `npm run db:seed`
+once migrated). See `.env.example` for `DATABASE_URL`. The dev database in
+this sandbox is ephemeral (container-local) — recreate the role/database
+per `ARCHITECTURE.md` if the container restarts.
+
+Mutations (deal stage drag-and-drop, task status drag-and-drop, Intelligence
+Feed review actions, notification read state) go through Server Actions in
+`src/lib/actions/mutations.ts`, each writing an `AuditLog` row.
 
 ## Working conventions
 
@@ -63,11 +78,17 @@ fixtures directly; always go through `src/lib/data/index.ts`.
   `src/components/<domain>/`.
 - No hardcoded fictional data inside page/component files — it lives in
   `src/lib/data/fixtures/` only.
-- Every list page handles loading, empty, error, and populated states.
+- Every list page handles loading, empty, error, and populated states —
+  `src/app/(app)/loading.tsx` and `error.tsx` cover the whole authenticated
+  section; `src/app/not-found.tsx` covers missing deals/clients.
 - Money values are stored as integer minor units (cents) with a currency
-  code — never floats.
-- Run `npm run lint` and `npx tsc --noEmit` and `npm run build` before
-  considering any stage complete.
+  code — never floats. Prisma stores them as `BigInt`; repositories convert
+  to `number` at the boundary (safe — well under `Number.MAX_SAFE_INTEGER`
+  for realistic deal sizes) since React Server Component payloads can't
+  serialize `BigInt`.
+- Run `npm run lint`, `npx tsc --noEmit`, `npm test` (Vitest — unit +
+  database integration tests), `npm run test:e2e` (Playwright smoke test),
+  and `npm run build` before considering any stage complete.
 
 ## Engineering decisions made without asking
 

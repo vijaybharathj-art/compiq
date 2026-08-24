@@ -71,7 +71,7 @@ export function DealsTable({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2 px-8 py-4">
+      <div className="flex flex-wrap items-center gap-2 px-4 py-4 md:px-8">
         <div className="relative w-64">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -130,56 +130,87 @@ export function DealsTable({
           <EmptyState icon={Briefcase} title="No deals match these filters" />
         </div>
       ) : (
-        <div className="px-8 pb-10">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Project</TableHead>
-                <TableHead>Client</TableHead>
-                <TableHead>Service</TableHead>
-                <TableHead>Stage</TableHead>
-                <TableHead className="text-right">Value</TableHead>
-                <TableHead>Priority</TableHead>
-                <TableHead>Risk</TableHead>
-                <TableHead>Lead Banker</TableHead>
-                <TableHead>Last Activity</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((deal) => (
-                <TableRow key={deal.id} className="cursor-pointer">
-                  <TableCell className="font-medium">
-                    <Link href={`/deals/${deal.id}`} className="hover:text-accent">
-                      {deal.projectCodename}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/clients/${deal.clientId}`} className="text-muted-foreground hover:text-accent">
-                      {deal.clientName}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {serviceNames.get(deal.bankingServiceId) ?? deal.bankingServiceId}
-                  </TableCell>
-                  <TableCell>{deal.currentStageLabel}</TableCell>
-                  <TableCell className="text-right tabular-nums font-medium">
-                    {formatMoney(deal.value)}
-                  </TableCell>
-                  <TableCell>
-                    <PriorityPill priority={deal.priority} />
-                  </TableCell>
-                  <TableCell>
-                    <RiskPill status={deal.riskStatus} note={deal.riskNote} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{deal.leadBankerName}</TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">
-                    {formatDate(deal.lastActivityAt)}
-                  </TableCell>
+        <>
+          {/* Dense table at md and up (DESIGN_SYSTEM.md — desktop is primary); card layout below md. */}
+          <div className="hidden px-8 pb-10 md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Service</TableHead>
+                  <TableHead>Stage</TableHead>
+                  <TableHead className="text-right">Value</TableHead>
+                  <TableHead>Priority</TableHead>
+                  <TableHead>Risk</TableHead>
+                  <TableHead>Lead Banker</TableHead>
+                  <TableHead>Last Activity</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((deal) => (
+                  <TableRow key={deal.id} className="cursor-pointer">
+                    <TableCell className="font-medium">
+                      <Link href={`/deals/${deal.id}`} className="hover:text-accent">
+                        {deal.projectCodename}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Link href={`/clients/${deal.clientId}`} className="text-muted-foreground hover:text-accent">
+                        {deal.clientName}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      {serviceNames.get(deal.bankingServiceId) ?? deal.bankingServiceId}
+                    </TableCell>
+                    <TableCell>{deal.currentStageLabel}</TableCell>
+                    <TableCell className="text-right tabular-nums font-medium">
+                      {formatMoney(deal.value)}
+                    </TableCell>
+                    <TableCell>
+                      <PriorityPill priority={deal.priority} />
+                    </TableCell>
+                    <TableCell>
+                      <RiskPill status={deal.riskStatus} note={deal.riskNote} />
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{deal.leadBankerName}</TableCell>
+                    <TableCell className="text-muted-foreground tabular-nums">
+                      {formatDate(deal.lastActivityAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+
+          <div className="flex flex-col gap-2.5 px-4 pb-10 md:hidden">
+            {filtered.map((deal) => (
+              <Link
+                key={deal.id}
+                href={`/deals/${deal.id}`}
+                className="rounded-md border border-border bg-card p-3.5"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground">{deal.projectCodename}</p>
+                    <p className="text-xs text-muted-foreground">{deal.clientName}</p>
+                  </div>
+                  <span className="shrink-0 text-sm font-medium tabular-nums text-gold">
+                    {formatMoney(deal.value)}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  {serviceNames.get(deal.bankingServiceId) ?? deal.bankingServiceId} ·{" "}
+                  {deal.currentStageLabel}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <PriorityPill priority={deal.priority} />
+                  <RiskPill status={deal.riskStatus} note={deal.riskNote} />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
