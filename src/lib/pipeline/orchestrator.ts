@@ -28,7 +28,7 @@ import { runDeadlineScan } from "@/lib/intelligence/deadline";
 // happening.
 const STAGE_PACING_MS = 180;
 
-async function log(
+export async function log(
   db: PrismaClient,
   jobId: string,
   stage: string,
@@ -51,7 +51,7 @@ interface ProcessOutcome {
   relevant: boolean;
 }
 
-async function processSingleEmail(
+export async function processSingleEmail(
   db: PrismaClient,
   organizationId: string,
   jobId: string,
@@ -162,7 +162,16 @@ export async function runScan(organizationId: string, triggeredById?: string): P
   });
 
   try {
-    const account = await db.emailAccount.findFirst({ where: { organizationId } });
+    // providerAccountId is null only for the seeded Demo Mode mailbox
+    // (prisma/seed.ts) — every real Phase 5 connection sets it from the
+    // OAuth token exchange (src/app/api/email/oauth/[provider]/callback).
+    // Once a banker connects a real mailbox, an org can have more than one
+    // EmailAccount row, so an unqualified findFirst() could silently pick
+    // the wrong one and return zero messages (the seeded backlog is
+    // threaded under the demo account's id specifically) — this keeps Run
+    // Scan pinned to the account it has always meant, independent of
+    // whatever else gets connected via Settings → Email.
+    const account = await db.emailAccount.findFirst({ where: { organizationId, providerAccountId: null } });
     if (!account) throw new Error("No EmailAccount configured for this organization.");
 
     await log(db, job.id, "ingestion", "info", `job ${displayId} started`);
@@ -274,7 +283,7 @@ export async function runScan(organizationId: string, triggeredById?: string): P
   }
 }
 
-async function setStage(db: PrismaClient, jobId: string, stage: string) {
+export async function setStage(db: PrismaClient, jobId: string, stage: string) {
   await db.emailProcessingJob.update({ where: { id: jobId }, data: { stage } });
 }
 

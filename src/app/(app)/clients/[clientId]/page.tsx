@@ -33,12 +33,11 @@ export default async function ClientDetailPage({
   params: Promise<{ clientId: string }>;
 }) {
   const { clientId } = await params;
+  // clientRepository.get() now scopes by organizationId itself (see
+  // src/lib/data/prisma-repository.ts) — a client id from another
+  // organization 404s here like any other nonexistent client.
   const client = await clientRepository.get(clientId);
   if (!client) notFound();
-  // See the matching check in deals/[dealId]/page.tsx — clientRepository.get()
-  // (Phase 1) has no organization filter of its own (spec §57).
-  const belongsToOrg = await getPrismaClient().client.count({ where: { id: clientId, organizationId: DEMO_ORG_ID } });
-  if (!belongsToOrg) notFound();
   const insights = computeRelationshipInsights(client);
   const attentionEntries = await computeClientAttention(getPrismaClient(), DEMO_ORG_ID);
   const attention = attentionEntries.find((a) => a.clientId === clientId);

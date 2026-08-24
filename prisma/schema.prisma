@@ -475,17 +475,47 @@ model EmailAccount {
   organizationId   String
   userId           String
   provider         EmailProviderType
+  /**
+   * The provider's own stable identifier for this mailbox (Gmail: the
+   * account email address / Google "sub"; Microsoft: the Graph user id).
+   * Globally unique per provider (see @@unique below) so the same real
+   * mailbox can never end up attached to two different organizations or
+   * users — PHASE5_REAL_EMAIL_INTEGRATION.md §14.
+   */
+  providerAccountId String?
   emailAddress     String
   connectionStatus EmailConnectionStatus @default(CONNECTED)
   scopesGranted    String[]
-  lastSyncedAt     DateTime?
-  createdAt        DateTime              @default(now())
 
-  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // OAuth tokens — encrypted at rest (src/lib/email/token-crypto.ts),
+  // never returned to any client component. Refresh tokens are long-lived;
+  // access tokens are refreshed on demand via refreshAuthentication().
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+
+  // Sync state (spec §15) — what the sync engine needs to resume rather
+  // than restart, and what Settings → Email shows a banker.
+  syncCursor            String?
+  initialSyncCompleted  Boolean   @default(false)
+  initialSyncWindowDays Int       @default(90)
+  lastSyncedAt          DateTime?
+  lastSuccessfulSyncAt  DateTime?
+  connectionError       String?
+  /** Set while a sync job is in flight; the single-flight guard (spec §78). */
+  activeSyncJobId       String?   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   threads      EmailThread[]
+  syncJobs     EmailProcessingJob[]
+  activeSyncJob EmailProcessingJob? @relation("ActiveSyncJob", fields: [activeSyncJobId], references: [id])
 
   @@unique([userId, emailAddress])
+  @@unique([provider, providerAccountId])
   @@index([organizationId])
   @@map("email_accounts")
 }
@@ -649,6 +679,10 @@ model EmailProcessingJob {
   id                   String    @id @default(cuid())
   displayId             String    @unique
   organizationId        String
+  /** Null for a Demo Mode "Run Scan" — set for a real mailbox sync (spec §32). */
+  emailAccountId        String?
+  /** Null for a Demo Mode scan; INITIAL or INCREMENTAL for a real sync (spec §16-17). */
+  syncType               EmailSyncType?
   status                JobStatus @default(QUEUED)
   triggeredById         String?
   stage                 String?
@@ -660,18 +694,32 @@ model EmailProcessingJob {
   opportunitiesCreated  Int       @default(0)
   risksDetected         Int       @default(0)
   suggestionsForReview  Int       @default(0)
+  /** Fetched from the provider but not yet run through the pipeline — distinct from processedCount (spec §32/§52). */
+  messagesFetched        Int       @default(0)
+  messagesFailed         Int       @default(0)
+  messagesSkipped        Int       @default(0)
+  /** Provider pagination token to resume from if the sync stops partway (spec §77). */
+  resumeCursor           String?
   errorMessage          String?
   startedAt             DateTime?
   finishedAt            DateTime?
   createdAt             DateTime  @default(now())
 
   organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  emailAccount EmailAccount?        @relation(fields: [emailAccountId], references: [id], onDelete: Cascade)
   triggeredBy  User?                @relation(fields: [triggeredById], references: [id])
   emails       Email[]
   logs         EmailProcessingLog[]
+  activeSyncFor EmailAccount?       @relation("ActiveSyncJob")
 
   @@index([organizationId])
+  @@index([emailAccountId])
   @@map("email_processing_jobs")
+}
+
+enum EmailSyncType {
+  INITIAL
+  INCREMENTAL
 }
 
 enum JobStatus {

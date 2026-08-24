@@ -86,10 +86,21 @@ from one), `risks[]`, `valuationObservations[]`, `inactivityException?`
 ### Email intelligence
 
 Full pipeline behavior that reads/writes these tables:
-`PHASE3_EMAIL_INTELLIGENCE.md`.
+`PHASE3_EMAIL_INTELLIGENCE.md`. Real Gmail/Microsoft 365 connection and
+sync fields (Phase 5): `PHASE5_REAL_EMAIL_INTEGRATION.md`.
 
 - **EmailAccount** — organizationId, userId, provider (`GMAIL |
-  OUTLOOK`), emailAddress, connectionStatus, scopesGranted, lastSyncedAt.
+  OUTLOOK`), emailAddress, connectionStatus (`CONNECTED | NEEDS_REAUTH |
+  DISCONNECTED`), scopesGranted, lastSyncedAt. *Phase 5*:
+  providerAccountId? (the provider's own stable account id — `null` only
+  for the seeded Demo Mode row, set by every real OAuth connection;
+  `@@unique([provider, providerAccountId])` prevents the same real mailbox
+  attaching to two organizations/users), accessTokenEncrypted?/
+  refreshTokenEncrypted? (AES-256-GCM, never plaintext), tokenExpiresAt?,
+  syncCursor? (provider-native steady-state cursor — Gmail historyId /
+  Graph delta link), initialSyncCompleted (bool), initialSyncWindowDays
+  (default 90), lastSuccessfulSyncAt?, connectionError?, activeSyncJobId?
+  (unique FK — the single-flight sync guard).
 - **EmailThread** — emailAccountId, providerThreadId, subject,
   participantSummary, dealId? (matched), clientId?, lastMessageAt.
 - **Email** — threadId, providerMessageId, fromAddress, toAddresses[],
@@ -108,12 +119,19 @@ Full pipeline behavior that reads/writes these tables:
   createdAt. `Email.relevance`/`relevanceScore` stay denormalized for fast
   reads; this is the durable, versioned "why."
 - **EmailProcessingJob** *(Phase 3)* — id, displayId (unique, e.g.
-  `SCAN-20260824-001`), organizationId, status (`QUEUED | RUNNING |
-  COMPLETED | FAILED`), triggeredById?, stage? (current pipeline stage
-  name), totalEmails/processedCount/relevantCount/dealsUpdated/
-  tasksCreated/opportunitiesCreated/risksDetected/suggestionsForReview
-  (all Int), errorMessage?, startedAt?, finishedAt?, createdAt. One row per
-  "Run Scan" invocation — the unit of observability and retry.
+  `SCAN-20260824-001` for a Demo Mode scan, `SYNC-20260824-001` for a real
+  sync — Phase 5), organizationId, status (`QUEUED | RUNNING | COMPLETED |
+  FAILED`), triggeredById?, stage? (current pipeline stage name),
+  totalEmails/processedCount/relevantCount/dealsUpdated/tasksCreated/
+  opportunitiesCreated/risksDetected/suggestionsForReview (all Int),
+  errorMessage?, startedAt?, finishedAt?, createdAt. One row per "Run Scan"
+  invocation (Demo Mode, organization-wide) or, as of Phase 5, one
+  `runAccountSync()` invocation for a single connected mailbox — the unit
+  of observability and retry either way. *Phase 5*: emailAccountId?
+  (`null` for a Demo Mode scan), syncType? (`INITIAL | INCREMENTAL`, `null`
+  for Demo Mode), messagesFetched/messagesFailed/messagesSkipped (Int),
+  resumeCursor? (the provider pagination token to resume a bounded sync
+  from on the next invocation).
 - **EmailProcessingLog** *(Phase 3)* — jobId, emailId?, stage, level, message,
   createdAt. Metadata-only (never full email bodies/tokens/credentials).
 

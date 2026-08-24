@@ -121,6 +121,7 @@ export async function runSearch(rawQuery: string): Promise<SearchResults> {
   const emailsPromise = parsed.freeText
     ? db.email.findMany({
         where: {
+          thread: { emailAccount: { organizationId: DEMO_ORG_ID } },
           OR: [
             { subject: { contains: parsed.freeText, mode: "insensitive" } },
             { bodyText: { contains: parsed.freeText, mode: "insensitive" } },

@@ -28,6 +28,14 @@ market-moving information.
   variables only (`GOOGLE_CLIENT_ID/SECRET`, `MICROSOFT_CLIENT_ID/SECRET`,
   `AUTH_SECRET`) — never committed, never hardcoded. `.env.example`
   documents required variables with placeholder values only.
+- **A separate, live OAuth flow exists as of Phase 5** for connecting a
+  real mailbox (Settings → Email), reusing the same Google/Microsoft app
+  credentials above at a narrower, read-only scope
+  (`gmail.readonly` / `offline_access Mail.Read`) — this authorizes
+  *mailbox read access*, not user *sign-in*, and is unrelated to the
+  Credentials-based demo login above. See
+  `PHASE5_REAL_EMAIL_INTEGRATION.md` §1 for its CSRF/state-binding and
+  account-linking defenses.
 
 ## 2. Authorization / organization isolation
 
@@ -36,9 +44,15 @@ market-moving information.
   filters on it — there is no "list all deals" code path that omits the
   tenant filter.
 - Role-based access control via `OrganizationMember.role`
-  (`OWNER/ADMIN/BANKER/ANALYST/VIEWER`): write actions (accept/reject AI
-  suggestions, edit deal fields, connect mailboxes) require `BANKER` or
-  above; `VIEWER` is read-only; org administration requires `ADMIN`/`OWNER`.
+  (`OWNER/ADMIN/BANKER/ANALYST/VIEWER`) is the intended model: write
+  actions (accept/reject AI suggestions, edit deal fields, connect
+  mailboxes) should require `BANKER` or above; `VIEWER` read-only; org
+  administration `ADMIN`/`OWNER`. **Current status**: every Server Action
+  across every phase, Phase 5's mailbox-connect actions included, checks
+  only that a session exists (`auth()` returns a user) — none yet checks
+  `role`. This is a pre-existing gap across the whole app, not something
+  Phase 5 introduced; noted here rather than left silently implied as
+  already enforced.
 - Team scoping (`M&A`, `ECM`, `DCM`, …) is a filter, not a hard security
   boundary in v1 — documented as a planned refinement if cross-team
   confidentiality walls are required (e.g. restructuring ethical walls).
@@ -49,9 +63,13 @@ market-moving information.
   layer); OAuth tokens and API calls to Gmail/Graph/Anthropic/OpenAI are
   TLS-only.
 - Encryption at rest: relies on the managed Postgres provider's at-rest
-  encryption; OAuth refresh tokens stored in `EmailAccount` are additionally
-  application-encrypted (planned: `ENCRYPTION_KEY`-based envelope
-  encryption before the live email integration ships).
+  encryption; OAuth access **and** refresh tokens stored in `EmailAccount`
+  are additionally application-encrypted — **live** as of Phase 5
+  (`src/lib/email/token-crypto.ts`, AES-256-GCM, random IV per encryption,
+  auth tag for tamper detection, key from `EMAIL_TOKEN_ENCRYPTION_KEY`).
+  The same primitive also encrypts the OAuth CSRF state cookie
+  (`src/lib/email/oauth-state.ts`) so it can't be forged or read
+  client-side. See `PHASE5_REAL_EMAIL_INTEGRATION.md` §1.
 - Secrets: environment variables only, loaded server-side. Nothing under
   `src/lib/ai/`, `src/lib/email/`, or `src/lib/auth/` is imported by a
   Client Component — enforced by keeping those modules free of `"use
@@ -74,9 +92,17 @@ Audit Log) is read-only and itself respects organization isolation.
 - AI provider calls are made server-side through the `AIProvider`
   abstraction (`ARCHITECTURE.md` §3) so swapping vendors doesn't touch
   application code and doesn't require re-auditing data flow per page.
-- Evidence excerpts are retained only as long as the source `EmailAccount`
-  connection is active; disconnecting a mailbox cascades deletion of its
-  emails, extractions, and evidence.
+- **Disconnecting a mailbox revokes and discards its stored OAuth tokens
+  immediately** (`EmailProvider.disconnect()` — encrypted access/refresh
+  tokens are set to `null`, `connectionStatus` becomes `DISCONNECTED`) but
+  deliberately does **not** cascade-delete the emails, extractions, deal
+  events, or evidence that mailbox already produced. Deal facts a real
+  human may have already reviewed and accepted — a stage change, a
+  valuation update — stay intact and traceable; disconnecting stops future
+  access, it doesn't retroactively corrupt the deal timeline. A genuine
+  data-deletion request (e.g. an employee's account being fully
+  offboarded) is a separate, explicit admin action, not an automatic
+  side-effect of clicking Disconnect.
 
 ## 6. Webhook handling (Gmail push / Graph subscriptions — planned)
 

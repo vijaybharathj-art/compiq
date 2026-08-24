@@ -17,6 +17,10 @@ const providers = [
   },
 ];
 
+// Real Gmail/Microsoft Graph connections are live as of Phase 5
+// (PHASE5_REAL_EMAIL_INTEGRATION.md) — this page stays a lightweight
+// pointer into Settings → Email, which owns the actual connection cards,
+// sync status, and history so there's exactly one place that state lives.
 export default function IntegrationsPage() {
   return (
     <div className="pb-10">
@@ -38,9 +42,9 @@ export default function IntegrationsPage() {
               </div>
             </CardHeader>
             <CardContent className="flex items-center justify-between gap-2">
-              <Badge variant="outline">Planned integration — not connected</Badge>
-              <Button size="sm" variant="secondary" disabled>
-                Connect
+              <Badge variant="outline">Manage in Settings → Email</Badge>
+              <Button size="sm" variant="secondary" asChild>
+                <a href="/settings/email">Manage</a>
               </Button>
             </CardContent>
           </Card>
@@ -57,9 +61,12 @@ export default function IntegrationsPage() {
             Tattava never requests or stores your mailbox password. Email content is processed
             solely to build your organization&apos;s deal intelligence and is never used for
             model training. See <code className="text-xs">SECURITY.md</code> and{" "}
-            <code className="text-xs">AI_EXTRACTION_SPEC.md</code> for the full data policy. This
-            build runs entirely in Demo Mode — no mailbox is connected and no external network
-            calls are made.
+            <code className="text-xs">AI_EXTRACTION_SPEC.md</code> for the full data policy.
+            Connection status, sync history, and disconnect are managed from{" "}
+            <a href="/settings/email" className="text-accent hover:underline">
+              Settings → Email
+            </a>
+            .
           </CardContent>
         </Card>
       </div>

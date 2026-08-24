@@ -29,16 +29,12 @@ export default async function DealDetailPage({
   params: Promise<{ dealId: string }>;
 }) {
   const { dealId } = await params;
+  // dealRepository.get() now scopes by organizationId itself (see
+  // src/lib/data/prisma-repository.ts) — a deal id from another
+  // organization 404s here like any other nonexistent deal.
   const deal = await dealRepository.get(dealId);
   if (!deal) notFound();
-  // dealRepository.get() (Phase 1) reads by id alone with no organization
-  // filter — this check closes that gap for the Phase 4.5 intelligence
-  // panel specifically (spec §57) without touching the Phase 1 repository
-  // layer itself. A deal id from another organization now 404s like any
-  // other nonexistent deal, rather than rendering another org's data.
   const db = getPrismaClient();
-  const belongsToOrg = await db.deal.count({ where: { id: dealId, organizationId: DEMO_ORG_ID } });
-  if (!belongsToOrg) notFound();
   const overview = await getDealIntelligenceOverview(db, dealId, DEMO_ORG_ID);
 
   return (

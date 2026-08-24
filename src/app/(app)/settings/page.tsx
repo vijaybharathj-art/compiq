@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShieldCheck } from "lucide-react";
+import { Mail, ShieldCheck } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -185,6 +185,22 @@ export default async function SettingsPage() {
               </Button>
             </div>
           </form>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex-row items-center gap-2">
+            <Mail className="size-4 text-muted-foreground" />
+            <CardTitle>Email</CardTitle>
+            <CardDescription className="mt-0">Connect a real Gmail or Microsoft 365 mailbox.</CardDescription>
+          </CardHeader>
+          <div className="flex items-center justify-between gap-3 px-5 pb-5">
+            <p className="text-xs text-muted-foreground">
+              Connection status, sync history, and disconnect all live on their own page.
+            </p>
+            <Button size="sm" variant="outline" asChild>
+              <Link href="/settings/email">Manage</Link>
+            </Button>
+          </div>
         </Card>
 
         <Card>

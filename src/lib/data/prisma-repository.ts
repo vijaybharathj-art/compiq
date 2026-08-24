@@ -1,4 +1,5 @@
 import { getPrismaClient } from "@/lib/db";
+import { DEMO_ORG_ID } from "@/lib/constants";
 import type {
   ClientDetail,
   ClientListItem,
@@ -26,6 +27,21 @@ import type {
 } from "@/types/domain";
 
 const db = getPrismaClient();
+
+// Organization isolation (PHASE5_REAL_EMAIL_INTEGRATION.md §prerequisite,
+// flagged as a known gap in PHASE4_5_PRODUCTION_HARDENING.md §6). Every
+// query below that resolves an entity by an id supplied through a route
+// param or client argument is now scoped to DEMO_ORG_ID, so an id from a
+// different organization returns nothing instead of that organization's
+// data. This mirrors the org-scoping pattern already used throughout
+// src/lib/actions/*.ts and src/lib/intelligence/*.ts (a static "current
+// organization" constant, not session-derived per-request resolution —
+// NextAuth's session here carries only user.id, never an organizationId,
+// so genuine per-request multi-org resolution remains a larger, separate
+// architectural item). Nested queries that key off an id already
+// validated against DEMO_ORG_ID (e.g. emails for a deal already confirmed
+// to belong to this org) are safe by construction and don't need a
+// second explicit filter.
 
 // ---------------------------------------------------------------------------
 // Shared mapping helpers
@@ -124,7 +140,7 @@ const dealInclude = {
 
 export const prismaDealRepository: DealRepository = {
   async list(filters?: DealFilters) {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { organizationId: DEMO_ORG_ID };
     if (filters?.bankingService) where.bankingServiceId = filters.bankingService;
     if (filters?.dealType) where.dealType = filters.dealType;
     if (filters?.sectorId) where.sectorId = filters.sectorId;
@@ -147,8 +163,8 @@ export const prismaDealRepository: DealRepository = {
   },
 
   async get(id: string): Promise<DealDetail | null> {
-    const deal = await db.deal.findUnique({
-      where: { id },
+    const deal = await db.deal.findFirst({
+      where: { id, organizationId: DEMO_ORG_ID },
       include: {
         ...dealInclude,
         targetCompany: true,
@@ -317,6 +333,7 @@ function mapTask(t: {
 export const prismaClientRepository: ClientRepository = {
   async list(): Promise<ClientListItem[]> {
     const clients = await db.client.findMany({
+      where: { organizationId: DEMO_ORG_ID },
       include: {
         sector: true,
         deals: { include: { currentStage: { select: { key: true } } } },
@@ -345,8 +362,8 @@ export const prismaClientRepository: ClientRepository = {
   },
 
   async get(id: string): Promise<ClientDetail | null> {
-    const client = await db.client.findUnique({
-      where: { id },
+    const client = await db.client.findFirst({
+      where: { id, organizationId: DEMO_ORG_ID },
       include: {
         sector: true,
         contacts: true,
@@ -432,7 +449,7 @@ async function titleMap(userIds: string[]): Promise<Map<string, string>> {
 
 export const prismaTaskRepository: TaskRepository = {
   async list(filters): Promise<TaskListItem[]> {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { organizationId: DEMO_ORG_ID };
     if (filters?.status) where.status = filters.status;
     if (filters?.dealId) where.dealId = filters.dealId;
     if (filters?.clientId) where.clientId = filters.clientId;
@@ -495,7 +512,7 @@ function mapIntelligenceRow(row: {
 export const prismaIntelligenceRepository: IntelligenceRepository = {
   async list(category) {
     const rows = await db.intelligenceEvent.findMany({
-      where: category ? { category } : undefined,
+      where: category ? { category, organizationId: DEMO_ORG_ID } : { organizationId: DEMO_ORG_ID },
       include: { sourceEmail: true, deal: true, client: true },
       orderBy: { occurredAt: "desc" },
       take: 200,
@@ -526,26 +543,27 @@ export const prismaDashboardRepository: DashboardRepository = {
       actionRequiredRows,
       newOpportunityRows,
     ] = await Promise.all([
-      db.deal.count(),
-      db.deal.count({ where: { riskStatus: "AT_RISK" } }),
-      db.deal.count({ where: { riskStatus: "WATCH" } }),
-      db.deal.count({ where: { priority: "CRITICAL" } }),
-      db.deal.count({ where: { previousStageId: { not: null } } }),
-      db.deal.aggregate({ _sum: { valueMinorUnits: true } }),
-      db.opportunity.count({ where: { status: "NEW" } }),
+      db.deal.count({ where: { organizationId: DEMO_ORG_ID } }),
+      db.deal.count({ where: { organizationId: DEMO_ORG_ID, riskStatus: "AT_RISK" } }),
+      db.deal.count({ where: { organizationId: DEMO_ORG_ID, riskStatus: "WATCH" } }),
+      db.deal.count({ where: { organizationId: DEMO_ORG_ID, priority: "CRITICAL" } }),
+      db.deal.count({ where: { organizationId: DEMO_ORG_ID, previousStageId: { not: null } } }),
+      db.deal.aggregate({ where: { organizationId: DEMO_ORG_ID }, _sum: { valueMinorUnits: true } }),
+      db.opportunity.count({ where: { organizationId: DEMO_ORG_ID, status: "NEW" } }),
       db.intelligenceEvent.findMany({
+        where: { organizationId: DEMO_ORG_ID },
         include: { sourceEmail: true, deal: true, client: true },
         orderBy: { occurredAt: "desc" },
         take: 8,
       }),
       db.task.findMany({
-        where: { status: { in: ["TODO", "IN_PROGRESS"] } },
+        where: { organizationId: DEMO_ORG_ID, status: { in: ["TODO", "IN_PROGRESS"] } },
         include: { deal: true, client: true, owner: true },
         orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
         take: 6,
       }),
       db.opportunity.findMany({
-        where: { status: "NEW" },
+        where: { organizationId: DEMO_ORG_ID, status: "NEW" },
         include: { client: true },
         orderBy: { createdAt: "desc" },
       }),
@@ -608,7 +626,7 @@ export const prismaReferenceRepository: ReferenceRepository = {
     return rows.map((r) => ({ id: r.id, name: r.name }));
   },
   async bankers() {
-    const org = await db.organizationMember.findMany({ include: { user: true } });
+    const org = await db.organizationMember.findMany({ where: { organizationId: DEMO_ORG_ID }, include: { user: true } });
     return org.map((m) => ({
       id: m.user.id,
       name: m.user.name ?? m.user.email,
@@ -651,6 +669,7 @@ export const prismaNotificationRepository: NotificationRepository = {
 export const prismaAuditLogRepository: AuditLogRepository = {
   async list() {
     const rows = await db.auditLog.findMany({
+      where: { organizationId: DEMO_ORG_ID },
       include: { actor: true },
       orderBy: { createdAt: "desc" },
       take: 200,

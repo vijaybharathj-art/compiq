@@ -25,6 +25,7 @@ banking workflows.
 | `PHASE3_EMAIL_INTELLIGENCE.md` | The **live** email-to-deal-intelligence pipeline — modules, provider abstractions, matching engine, jobs/observability |
 | `PHASE4_DEAL_INTELLIGENCE.md` | The **live** Deal Intelligence layer — importance scoring, Risk/Inactivity/Valuation/Deadline/Momentum engines, Briefing engine, What Changed?, Client Attention |
 | `PHASE4_5_PRODUCTION_HARDENING.md` | The **live** trust layer, intelligence-first dashboard/UX polish, organization-isolation audit, AI-failure resilience — what shipped vs. deferred |
+| `PHASE5_REAL_EMAIL_INTEGRATION.md` | The **live** real Gmail + Microsoft 365 mailbox integration — OAuth, token security, the sync engine, Settings → Email — what shipped vs. Phase 5B |
 | `SECURITY.md` | Auth, data isolation, secrets, RBAC, audit policy |
 | `DESIGN_SYSTEM.md` | Visual language, tokens, component conventions |
 
@@ -35,12 +36,15 @@ banking workflows.
   live database is the active runtime** (see below), schema is the
   production source of truth
 - Auth.js (NextAuth v5) — a Credentials-based demo login is live today
-  (`src/lib/auth/config.ts`); Google + Microsoft Entra ID OAuth are
-  scaffolded and planned (SECURITY.md §1)
+  (`src/lib/auth/config.ts`); Google + Microsoft Entra ID OAuth *sign-in*
+  are scaffolded and planned (SECURITY.md §1) — separate from the
+  mailbox-connect OAuth flow below, which is live
 - `@dnd-kit/core` — Pipeline and Tasks board drag-and-drop
 - `EmailProvider` abstraction (`src/lib/email/`) — `DemoEmailProvider`
   (live, backed by the seeded mailbox) / `GmailProvider` /
-  `MicrosoftGraphProvider` (planned)
+  `MicrosoftGraphProvider` (live, real OAuth + REST clients — see
+  `PHASE5_REAL_EMAIL_INTEGRATION.md`; never live-tested against a real
+  mailbox in this sandboxed environment)
 - `AIProvider` abstraction (`src/lib/ai/`) — `DemoAIProvider` (live,
   rule-based, drives the real email intelligence pipeline) / Anthropic /
   OpenAI (planned) — see `PHASE3_EMAIL_INTELLIGENCE.md`
@@ -119,6 +123,30 @@ what's deferred — a standalone Data Quality Center, a model-evaluation
 program, and a known remaining gap in the Phase 1 read-repository layer's
 organization scoping — rather than claiming a full 89-section spec was
 completed in one pass.
+
+## Phase 5: real email integration is live
+
+`PHASE5_REAL_EMAIL_INTEGRATION.md` documents real Gmail + Microsoft 365
+mailbox ingestion behind the existing `EmailProvider` abstraction — real
+OAuth (`src/app/api/email/oauth/[provider]/{start,callback}`), encrypted
+token storage (`src/lib/email/token-crypto.ts`), real REST clients for
+both providers, and a new per-account sync engine
+(`src/lib/email/sync-engine.ts`, `runAccountSync()`) that ingests and
+dedupes real messages, then hands genuinely new ones to Phase 3's
+unmodified `processSingleEmail()` — there is still exactly one
+intelligence pipeline. **Settings → Email** (`/settings/email`) is where a
+banker connects a mailbox, watches sync history, and disconnects.
+Real email is bounded (30/90/180/365-day initial sync window, default 90,
+never unlimited), resumable, single-flight-guarded per account, and
+metadata-only for attachments in this phase. The doc also states plainly
+what's Phase 5B — push notifications/webhooks, a scheduler, attachment
+content download — and the one honest caveat that matters most: none of
+the real-provider code has ever completed a live OAuth handshake or synced
+a real mailbox in this sandboxed environment (no outbound network access,
+no registered OAuth app credentials here); what's verified is correctness
+against the documented API contracts plus a full synthetic/mocked test
+suite (`tests/fixtures/phase5-golden-emails.ts`,
+`tests/integration/phase5-sync-engine.test.ts`).
 
 ## Working conventions
 

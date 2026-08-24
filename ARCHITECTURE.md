@@ -172,6 +172,40 @@ decisions yourself and document them"):
     out of scope for a phase whose own brief says "do not rebuild Phase
     1-4." Reported as the top Phase 5 security item instead of attempted
     as an unreviewed rewrite. See `PHASE4_5_PRODUCTION_HARDENING.md` §6.
+23. **`prisma-repository.ts`'s read-layer org-scoping gap (item #22) was
+    closed as Phase 5's explicit prerequisite**, not deferred again —
+    real mailbox content raised the stakes on the same gap enough that it
+    could no longer wait. Every `.get(id)` now uses `findFirst({ where:
+    { id, organizationId } })`, never a bare `findUnique`; `list()` and
+    the dashboard aggregate gained the same filter. See
+    `PHASE5_REAL_EMAIL_INTEGRATION.md` §1 and §7 for the regression tests
+    added against the actual repository functions, not just the query
+    pattern.
+24. **The mailbox-connect OAuth flow reuses the same
+    `GOOGLE_CLIENT_ID`/`MICROSOFT_CLIENT_ID` app registrations as NextAuth
+    sign-in**, requesting a different, narrower scope
+    (`gmail.readonly` / `offline_access Mail.Read`) at its own
+    `/api/email/oauth/[provider]/start` and `/callback` routes rather than
+    reusing NextAuth's own callback. One fewer app to register and rotate
+    credentials for; the two flows stay fully independent in code (state
+    handling, token storage, purpose) despite the shared app.
+25. **`EmailAccount.providerAccountId IS NULL` is the load-bearing signal
+    that distinguishes the seeded Demo Mode mailbox from a real, connected
+    one** — set only by the real OAuth callback, never present on the
+    `prisma/seed.ts`-created row. Both `runScan()`'s account lookup and
+    Settings → Email's account listing filter on it; without this
+    distinction, connecting a real mailbox silently breaks Demo Mode's Run
+    Scan (a `findFirst` with no ordering can resolve to the wrong account)
+    and Settings → Email would show the un-connected seed row as if it
+    were a manageable real connection. See
+    `PHASE5_REAL_EMAIL_INTEGRATION.md` §5.
+26. **Real per-account sync (`runAccountSync()`) reuses `runScan()`'s own
+    per-email processing function instead of a parallel implementation** —
+    `processSingleEmail`/`log`/`setStage` in `src/lib/pipeline/
+    orchestrator.ts` were made `export`-only (zero logic changes) so the
+    new sync engine could call the identical Phase 3 code path. This is
+    the concrete mechanism behind "provider differences end at
+    normalization" — everything after ingestion is one pipeline, not two.
 
 ## 3. Provider abstractions
 
@@ -191,18 +225,31 @@ interface EmailProvider {
   getAttachments(accountId, providerMessageId): Promise<EmailAttachmentRef[]>
   downloadAttachment(accountId, attachmentId): Promise<Buffer>
   markProcessed(accountId, providerMessageId): Promise<void>
-  watch(accountId): Promise<WatchHandle> // push notifications where supported
+  watch(accountId): Promise<WatchHandle> // push notifications where supported — Phase 5B
+  // Phase 5 additions:
+  disconnect(accountId): Promise<void>
+  getConnectionStatus(accountId): Promise<ConnectionStatus>
+  refreshAuthentication(accountId): Promise<void>
+  handleProviderError(error): EmailProviderError
+  initialSync(accountId, options: SyncOptions): Promise<SyncPage>
+  incrementalSync(accountId, options: SyncOptions): Promise<SyncPage>
 }
 ```
 
 Implementations: `DemoEmailProvider` (**live** — every method is a real
 Prisma read/write against the seeded mailbox; `getNewMessages` is what
-"Run Scan" pulls from), `GmailProvider` (Gmail API, OAuth via Google),
-`MicrosoftGraphProvider` (Microsoft Graph API, OAuth via Entra ID) — both
-planned, throwing `PLANNED INTEGRATION` errors, no real credentials exist
-in this environment. `getEmailProvider()` resolves to Demo unless
-`EMAIL_PROVIDER=live`; `getEmailProviderFor(provider)` dispatches per
-`EmailAccount.provider` once real accounts exist.
+"Run Scan" pulls from), `GmailProvider` (Gmail API v1, real OAuth + REST
+client), `MicrosoftGraphProvider` (Microsoft Graph v1.0, real OAuth + REST
+client) — both **live** as of Phase 5 (`PHASE5_REAL_EMAIL_INTEGRATION.md`),
+correct against the documented API contracts and covered by a synthetic/
+mocked test suite, but never yet exercised against a live mailbox in this
+sandboxed environment (no outbound network access, no registered OAuth app
+credentials here). `getEmailProvider()` resolves to Demo unless
+`EMAIL_PROVIDER=live` (which throws — Run Scan has no single account to
+target); `getEmailProviderFor(provider)` dispatches per
+`EmailAccount.provider` — this is what real per-account sync
+(`src/lib/email/sync-engine.ts`) actually uses, independent of
+`getEmailProvider()`'s org-wide Demo Mode toggle.
 
 ### `AIProvider`
 
@@ -259,23 +306,30 @@ src/
       pipeline/
       calendar/
       search/
-      settings/ integrations/ audit-log/
+      settings/ settings/email/ integrations/ audit-log/  # Settings -> Email is Phase 5's real connection UI
       loading.tsx error.tsx # shared loading/error boundaries for the whole section
     api/auth/[...nextauth]/ # NextAuth route handlers
+    api/email/oauth/[provider]/start/    # Phase 5 — mailbox-connect OAuth start
+    api/email/oauth/[provider]/callback/ # Phase 5 — mailbox-connect OAuth callback
     not-found.tsx global-error.tsx
   components/
     ui/                     # shadcn primitives
     layout/                 # sidebar, topbar, mobile-nav (drawer), notifications-menu
     dashboard/ deals/ clients/ intelligence/ tasks/ pipeline/  # feature components
+    settings/                # Phase 5 — EmailAccountCard (Sync Now, Disconnect, sync history)
   lib/
     data/                   # repository interfaces (types.ts) + prisma-repository.ts (live)
                              # + demo-repository.ts (fixtures — seed source, not active)
     actions/mutations.ts    # Server Actions: stage/status/notification/review mutations + audit log
     actions/pipeline-actions.ts # Server Actions: triggerEmailScan, accept/rejectExtraction (Phase 3)
     actions/intelligence-actions.ts # Server Actions: risk ack/dismiss/resolve, inactivity ignore, briefings (Phase 4)
+    actions/email-actions.ts # Server Actions: syncEmailAccount, disconnectEmailAccount, setInitialSyncWindow (Phase 5)
     ai/                     # AIProvider interface, extraction-schema.ts (Zod), extractors.ts (pure
                              # helpers), confidence-policy.ts, prompts/, Demo/Anthropic/OpenAI impls
-    email/                  # EmailProvider interface + Demo (live) / Gmail / MicrosoftGraph impls
+    email/                  # EmailProvider interface + Demo (live) / Gmail / MicrosoftGraph impls (all live)
+    email/token-crypto.ts   # Phase 5 — AES-256-GCM token-at-rest encryption
+    email/oauth-state.ts    # Phase 5 — encrypted, bound OAuth state cookie (CSRF/account-linking defense)
+    email/sync-engine.ts    # Phase 5 — real per-account sync (runAccountSync), reuses orchestrator.ts's processSingleEmail
     pipeline/                # the Phase 3 pipeline — see PHASE3_EMAIL_INTELLIGENCE.md §1
     intelligence/            # the Phase 4 Deal Intelligence layer — see PHASE4_DEAL_INTELLIGENCE.md
     auth/                   # Auth.js config (config.ts), Server Actions (actions.ts)
@@ -284,8 +338,9 @@ src/
     format.ts               # currency/date formatting helpers
   types/                    # shared domain types mirrored from Prisma
 tests/
-  unit/                     # Vitest — pure functions (format, search-query, pipeline extraction)
-  integration/               # Vitest — against the real seeded Postgres database
+  unit/                     # Vitest — pure functions (format, search-query, pipeline extraction, Phase 5 golden emails)
+  integration/               # Vitest — against the real seeded Postgres database (Phase 5: sync engine, cross-org security, valuation golden test)
+  fixtures/                  # Phase 5 — synthetic golden email dataset (tests/fixtures/phase5-golden-emails.ts)
   e2e/                        # Playwright — full-app smoke test
 ```
 
