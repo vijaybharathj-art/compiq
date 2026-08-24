@@ -4,6 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { primaryNav, systemNav, teamsNav } from "./nav-config";
 import { cn } from "@/lib/utils";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { initials } from "@/lib/format";
+
+interface SidebarUser {
+  name: string;
+  role: string;
+  team: string;
+  organization: string;
+}
 
 function NavSection({ label }: { label: string }) {
   return (
@@ -101,11 +110,28 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function Sidebar() {
+export function SidebarUserFooter({ user }: { user: SidebarUser }) {
+  return (
+    <div className="flex items-center gap-2.5 border-t border-border px-3 py-3">
+      <Avatar className="size-8 shrink-0">
+        <AvatarFallback>{initials(user.name)}</AvatarFallback>
+      </Avatar>
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-foreground">{user.name}</p>
+        <p className="truncate text-xs text-muted-foreground">
+          {user.role} · {user.organization}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function Sidebar({ user }: { user?: SidebarUser }) {
   return (
     <aside className="hidden lg:flex w-60 shrink-0 flex-col border-r border-border bg-surface">
       <SidebarBrand />
       <SidebarNav />
+      {user && <SidebarUserFooter user={user} />}
     </aside>
   );
 }

@@ -92,6 +92,12 @@ decisions yourself and document them"):
     UIs apply an optimistic local update, call the action, then
     `router.refresh()` to reconcile with the server; on failure they revert
     to the last known-good state and show an inline error.
+12. **Settings → Notifications preferences are real persisted booleans on
+    `OrganizationMember`**, not a decorative form. The checkboxes are native
+    Radix `Checkbox` inputs with a `name`, so the surrounding `<form
+    action={updateNotificationPreferences}>` submits them via a Server
+    Action with no client-side state required — consistent with decision
+    #11's "Server Action, not a route handler" rule.
 
 ## 3. Provider abstractions
 

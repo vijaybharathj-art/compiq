@@ -25,7 +25,9 @@ changes.
   BANKER | ANALYST | VIEWER`), team (`MA | ECM | DCM | LEVERAGED_FINANCE |
   RESTRUCTURING | PRIVATE_CAPITAL | ADVISORY`), title (job title, e.g.
   "Vice President, DCM" — display-only, distinct from `role`'s access
-  level), joinedAt. `Account`/`Session` are the standard Auth.js adapter
+  level), notifyDealChanges/notifyRiskAlerts/notifyTaskReminders/
+  notifyDailyDigest (booleans backing the Settings → Notifications form),
+  joinedAt. `Account`/`Session` are the standard Auth.js adapter
   tables for the OAuth path; the live Credentials demo login uses JWT
   sessions and doesn't populate them.
 

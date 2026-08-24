@@ -119,9 +119,17 @@ export interface DashboardRepository {
   get(): Promise<DashboardData>;
 }
 
+export interface NotificationPreferences {
+  notifyDealChanges: boolean;
+  notifyRiskAlerts: boolean;
+  notifyTaskReminders: boolean;
+  notifyDailyDigest: boolean;
+}
+
 export interface ReferenceRepository {
   sectors(): Promise<Sector[]>;
   bankers(): Promise<Banker[]>;
+  notificationPreferences(userId: string): Promise<NotificationPreferences>;
 }
 
 export interface AuditLogEntryView {

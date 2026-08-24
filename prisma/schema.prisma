@@ -107,6 +107,11 @@ model OrganizationMember {
   title          String?
   joinedAt       DateTime     @default(now())
 
+  notifyDealChanges   Boolean @default(true)
+  notifyRiskAlerts    Boolean @default(true)
+  notifyTaskReminders Boolean @default(true)
+  notifyDailyDigest   Boolean @default(false)
+
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 

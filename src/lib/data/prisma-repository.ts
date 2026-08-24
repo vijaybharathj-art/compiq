@@ -617,6 +617,15 @@ export const prismaReferenceRepository: ReferenceRepository = {
       email: m.user.email,
     }));
   },
+  async notificationPreferences(userId) {
+    const member = await db.organizationMember.findFirst({ where: { userId } });
+    return {
+      notifyDealChanges: member?.notifyDealChanges ?? true,
+      notifyRiskAlerts: member?.notifyRiskAlerts ?? true,
+      notifyTaskReminders: member?.notifyTaskReminders ?? true,
+      notifyDailyDigest: member?.notifyDailyDigest ?? false,
+    };
+  },
 };
 
 export const prismaNotificationRepository: NotificationRepository = {

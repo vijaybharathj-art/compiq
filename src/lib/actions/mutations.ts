@@ -50,6 +50,34 @@ export async function markAllNotificationsRead() {
 }
 
 // ---------------------------------------------------------------------------
+// Notification preferences (Settings)
+// ---------------------------------------------------------------------------
+
+const NOTIFICATION_PREFERENCE_KEYS = [
+  "notifyDealChanges",
+  "notifyRiskAlerts",
+  "notifyTaskReminders",
+  "notifyDailyDigest",
+] as const;
+
+export async function updateNotificationPreferences(formData: FormData) {
+  const userId = await requireUserId();
+
+  const data = Object.fromEntries(
+    NOTIFICATION_PREFERENCE_KEYS.map((key) => [key, formData.get(key) === "on"]),
+  );
+
+  await prisma.organizationMember.updateMany({
+    where: { userId },
+    data,
+  });
+
+  await writeAuditLog(userId, "Updated notification preferences", "OrganizationMember", userId, data);
+
+  revalidatePath("/settings");
+}
+
+// ---------------------------------------------------------------------------
 // Deal stage (Pipeline drag-and-drop)
 // ---------------------------------------------------------------------------
 

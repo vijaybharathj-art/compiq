@@ -201,6 +201,14 @@ export const demoReferenceRepository: ReferenceRepository = {
   async bankers() {
     return bankers;
   },
+  async notificationPreferences() {
+    return {
+      notifyDealChanges: true,
+      notifyRiskAlerts: true,
+      notifyTaskReminders: true,
+      notifyDailyDigest: false,
+    };
+  },
 };
 
 const RISK_WEIGHT: Record<RiskStatus, number> = { AT_RISK: 2, WATCH: 1, ON_TRACK: 0 };
