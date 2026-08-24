@@ -24,6 +24,7 @@ banking workflows.
 | `AI_EXTRACTION_SPEC.md` | Email intelligence pipeline spec, confidence policy, prompts |
 | `PHASE3_EMAIL_INTELLIGENCE.md` | The **live** email-to-deal-intelligence pipeline — modules, provider abstractions, matching engine, jobs/observability |
 | `PHASE4_DEAL_INTELLIGENCE.md` | The **live** Deal Intelligence layer — importance scoring, Risk/Inactivity/Valuation/Deadline/Momentum engines, Briefing engine, What Changed?, Client Attention |
+| `PHASE4_5_PRODUCTION_HARDENING.md` | The **live** trust layer, intelligence-first dashboard/UX polish, organization-isolation audit, AI-failure resilience — what shipped vs. deferred |
 | `SECURITY.md` | Auth, data isolation, secrets, RBAC, audit policy |
 | `DESIGN_SYSTEM.md` | Visual language, tokens, component conventions |
 
@@ -101,6 +102,23 @@ traceable back to a real `IntelligenceEvent` via `Briefing.sourceEventIds`.
 The AI provider only ever narrates already-assembled facts
 (`AIProvider.summarizeBriefing()`) — it never invents a fact or
 recomputes a number that gets rendered directly.
+
+## Phase 4.5: production hardening & banker UX
+
+`PHASE4_5_PRODUCTION_HARDENING.md` documents the trust layer
+(`TrustBadge`/`WhyAmISeeingThis`/`WhyThisMatters`/`IntelligenceLabelChip`,
+`src/components/shared/`) now standardized across What Changed, the
+dashboard's Top Priorities, Deal Detail, and the Task board; the
+intelligence-first dashboard (`src/app/(app)/dashboard/page.tsx`, no
+generic CRM stat grid); an organization-isolation audit and fixes across
+every Server Action in `src/lib/actions/`; AI-narration failure isolation
+in the Briefing Engine (a failed `summarizeBriefing()` call never takes
+the underlying structured data down with it); and Run Scan's
+server-enforced "no duplicate jobs" guarantee. It also states plainly
+what's deferred — a standalone Data Quality Center, a model-evaluation
+program, and a known remaining gap in the Phase 1 read-repository layer's
+organization scoping — rather than claiming a full 89-section spec was
+completed in one pass.
 
 ## Working conventions
 

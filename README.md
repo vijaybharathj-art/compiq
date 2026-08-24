@@ -8,8 +8,9 @@ origination opportunities.
 Start with `CLAUDE.md` — it maps the rest of the documentation
 (`PRODUCT_SPEC.md`, `ARCHITECTURE.md`, `DATABASE_SCHEMA.md`,
 `AI_EXTRACTION_SPEC.md`, `PHASE3_EMAIL_INTELLIGENCE.md`,
-`PHASE4_DEAL_INTELLIGENCE.md`, `SECURITY.md`, `DESIGN_SYSTEM.md`), which
-together are the persistent source of truth for this project.
+`PHASE4_DEAL_INTELLIGENCE.md`, `PHASE4_5_PRODUCTION_HARDENING.md`,
+`SECURITY.md`, `DESIGN_SYSTEM.md`), which together are the persistent
+source of truth for this project.
 
 ## Running locally
 

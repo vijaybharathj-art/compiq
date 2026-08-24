@@ -30,6 +30,18 @@ const RECOMMENDATION_TEMPLATES: Partial<Record<IntelligenceEventType, (headline:
 
 const RECOMMENDATION_EVENT_TYPES = Object.keys(RECOMMENDATION_TEMPLATES) as IntelligenceEventType[];
 
+/**
+ * The same templated mapping generateRecommendedActions() uses, exposed for
+ * callers (the dashboard's Top Priorities card) that already have an event
+ * in hand and don't want a second query. Returns null for event types with
+ * no recommendation template — callers should simply omit the "Recommended
+ * action" line rather than fabricate generic advice (spec §31).
+ */
+export function recommendedActionText(eventType: IntelligenceEventType, headline: string, dealCodename: string): string | null {
+  const template = RECOMMENDATION_TEMPLATES[eventType];
+  return template ? template(headline, dealCodename) : null;
+}
+
 export async function generateRecommendedActions(
   db: PrismaClient,
   organizationId: string,

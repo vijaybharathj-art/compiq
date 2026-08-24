@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TriangleAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,6 +14,7 @@ export function BriefingView({
   dateLabel,
   summary,
   content,
+  narrationFailed,
   generateAction,
   generateLabel,
 }: {
@@ -21,6 +23,10 @@ export function BriefingView({
   dateLabel: string;
   summary: BriefingSummary;
   content: BriefingContent;
+  /** True when AIProvider.summarizeBriefing() threw (spec §72) — the
+   * structured sections below are still real, computed data; only the
+   * narrative paragraph is missing. Never fabricate one in its place. */
+  narrationFailed?: boolean;
   generateAction: () => Promise<void>;
   generateLabel: string;
 }) {
@@ -39,7 +45,19 @@ export function BriefingView({
             </Button>
           </form>
         </div>
-        <p className="mt-3 text-sm text-foreground/90">{content.narrative}</p>
+        {narrationFailed ? (
+          <div className="mt-3 flex items-start gap-2 rounded-sm border border-warning/30 bg-warning/10 px-3 py-2">
+            <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-warning" />
+            <div>
+              <p className="text-xs font-semibold text-warning">Briefing narrative unavailable</p>
+              <p className="mt-0.5 text-xs text-foreground/80">
+                Tattava was unable to generate the narrative summary. The intelligence below is unaffected — every section is real, computed data.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-foreground/90">{content.narrative}</p>
+        )}
         <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm text-foreground">
           <span>{summary.dealsChanged} deals changed</span>
           <span>{summary.dealsAdvanced} advanced</span>

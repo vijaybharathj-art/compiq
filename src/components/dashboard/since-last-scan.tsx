@@ -1,30 +1,24 @@
 import Link from "next/link";
 import { RadioTower } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
-import { ConfidenceBadge } from "@/components/shared/badges";
-import { getPendingEmailCount } from "@/lib/pipeline/queries";
-import { getWhatChangedSince } from "@/lib/intelligence/feed";
-import { getPrismaClient } from "@/lib/db";
-import { DEMO_ORG_ID, DEMO_NOW } from "@/lib/constants";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatMoney } from "@/lib/format";
+import type { WhatChangedSummary } from "@/lib/intelligence/feed";
 
-// "What Changed?" on the dashboard (spec §4/§37/§38) — same
-// getWhatChangedSince query the /intelligence page uses, windowed by the
-// last completed scan, so the number here and the filtered feed it links
-// to always agree.
-export async function SinceLastScanCard() {
-  const db = getPrismaClient();
-  const lastJob = await db.emailProcessingJob.findFirst({
-    where: { organizationId: DEMO_ORG_ID, status: "COMPLETED" },
-    orderBy: { finishedAt: "desc" },
-  });
-  const windowStart = lastJob?.finishedAt ?? new Date(DEMO_NOW.getTime() - 1000 * 60 * 60 * 24);
-
-  const [stats, pendingCount] = await Promise.all([
-    getWhatChangedSince(db, DEMO_ORG_ID, windowStart),
-    getPendingEmailCount(DEMO_ORG_ID),
-  ]);
-
+// The dashboard stat bar (spec §5-6) — "N deals changed / N require
+// attention / $X deal value affected." Takes already-fetched stats as a
+// prop rather than querying itself, so the dashboard computes
+// getWhatChangedSince() exactly once and both this card and Top Priorities
+// read the identical numbers (spec §38's "do not cheat," extended: the
+// stat bar and the priorities list must never disagree either).
+export function SinceLastScanCard({
+  stats,
+  pendingCount,
+  windowStart,
+}: {
+  stats: WhatChangedSummary;
+  pendingCount: number;
+  windowStart: Date;
+}) {
   const sinceParam = encodeURIComponent(windowStart.toISOString());
 
   return (
@@ -40,24 +34,16 @@ export async function SinceLastScanCard() {
           </Link>
         </CardAction>
       </CardHeader>
-      <CardContent className="flex flex-col gap-4 pt-4">
+      <CardContent className="flex flex-col gap-3 pt-4">
         <Link href={`/intelligence?since=${sinceParam}`} className="grid grid-cols-2 gap-3 rounded-md sm:grid-cols-4 hover:bg-surface-raised/50">
           <Stat value={stats.dealsChanged} label={`deal${stats.dealsChanged === 1 ? "" : "s"} changed`} />
           <Stat value={stats.requiresAttention} label="require attention" />
-          <Stat value={stats.newOpportunities} label={`potential opportunit${stats.newOpportunities === 1 ? "y" : "ies"}`} />
+          <Stat
+            value={formatMoney({ amountMinorUnits: Number(stats.totalValueAffectedMinorUnits), currency: "USD" })}
+            label="deal value affected"
+          />
           <Stat value={stats.risks} label={`risk${stats.risks === 1 ? "" : "s"} detected`} />
         </Link>
-
-        {stats.topEvents.length > 0 && (
-          <ul className="flex flex-col gap-1.5 border-t border-border-subtle pt-3">
-            {stats.topEvents.slice(0, 5).map((e) => (
-              <li key={e.id} className="flex items-center justify-between gap-2 text-sm">
-                <span className="truncate text-foreground/90">{e.headline}</span>
-                <ConfidenceBadge percent={e.confidencePercent ?? undefined} />
-              </li>
-            ))}
-          </ul>
-        )}
 
         <p className="text-xs text-muted-foreground">Since {formatDateTime(windowStart.toISOString())}</p>
       </CardContent>
@@ -65,7 +51,7 @@ export async function SinceLastScanCard() {
   );
 }
 
-function Stat({ value, label }: { value: number; label: string }) {
+function Stat({ value, label }: { value: number | string; label: string }) {
   return (
     <div>
       <p className="text-xl font-semibold tabular-nums text-foreground">{value}</p>

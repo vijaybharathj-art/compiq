@@ -135,8 +135,25 @@ export interface RunScanResult {
   counters: ScanCounters;
 }
 
+// Thrown when a scan is requested while another is already running for the
+// same organization (spec §34 "do not start duplicate jobs") — distinct
+// from a generic Error so the UI can show "Scan in progress" rather than a
+// raw failure message.
+export class ScanAlreadyRunningError extends Error {
+  constructor() {
+    super("A scan is already in progress for this organization.");
+    this.name = "ScanAlreadyRunningError";
+  }
+}
+
 export async function runScan(organizationId: string, triggeredById?: string): Promise<RunScanResult> {
   const db = getPrismaClient();
+
+  const alreadyRunning = await db.emailProcessingJob.findFirst({
+    where: { organizationId, status: "RUNNING" },
+  });
+  if (alreadyRunning) throw new ScanAlreadyRunningError();
+
   const displayId = await nextDisplayId(db);
   const counters = emptyScanCounters();
 

@@ -13,6 +13,14 @@ export type { RunScanResult } from "@/lib/pipeline/orchestrator";
 
 const prisma = getPrismaClient();
 
+// Scoped to DEMO_ORG_ID (spec §57-58) — AiExtraction has no organizationId
+// column of its own (dealId is optional, so it can't anchor the check
+// alone), but every extraction always has an emailId, and every Email
+// belongs to an EmailAccount that does carry organizationId. Used for both
+// accept and reject so an extraction from another organization can never
+// be matched by id alone.
+const extractionOrgFilter = { email: { thread: { emailAccount: { organizationId: DEMO_ORG_ID } } } } as const;
+
 async function requireUserId(): Promise<string> {
   const session = await auth();
   if (!session?.user?.id) throw new Error("Not authenticated.");
@@ -57,7 +65,9 @@ interface StoredChangeFields {
 export async function acceptExtraction(extractionId: string): Promise<void> {
   const userId = await requireUserId();
 
-  const extraction = await prisma.aiExtraction.findUniqueOrThrow({ where: { id: extractionId } });
+  const extraction = await prisma.aiExtraction.findFirstOrThrow({
+    where: { id: extractionId, ...extractionOrgFilter },
+  });
   if (extraction.appliedStatus !== "SUGGESTED_PENDING") {
     throw new Error(`Extraction ${extractionId} is not pending review.`);
   }
@@ -140,7 +150,9 @@ export async function acceptExtraction(extractionId: string): Promise<void> {
 export async function rejectExtraction(extractionId: string): Promise<void> {
   const userId = await requireUserId();
 
-  const extraction = await prisma.aiExtraction.findUniqueOrThrow({ where: { id: extractionId } });
+  const extraction = await prisma.aiExtraction.findFirstOrThrow({
+    where: { id: extractionId, ...extractionOrgFilter },
+  });
   if (extraction.appliedStatus !== "SUGGESTED_PENDING") {
     throw new Error(`Extraction ${extractionId} is not pending review.`);
   }

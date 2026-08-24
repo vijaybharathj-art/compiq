@@ -39,6 +39,7 @@ export default async function MorningBriefingPage() {
           dateLabel={now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
           summary={parseBriefingSummary(briefing.summary)}
           content={parseBriefingContent(briefing.content)}
+          narrationFailed={briefing.status === "FAILED"}
           generateAction={generateMorningBriefingAction}
           generateLabel="Regenerate"
         />

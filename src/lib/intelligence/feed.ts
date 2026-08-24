@@ -18,12 +18,15 @@ export type FeedFilter =
   | "OPPORTUNITIES"
   | "CLIENT_ACTIVITY";
 
+export type FeedSort = "IMPORTANCE" | "NEWEST";
+
 export interface FeedQuery {
   filter?: FeedFilter;
   search?: string;
   userId?: string;
   since?: Date;
   limit?: number;
+  sort?: FeedSort;
 }
 
 const FILTER_EVENT_TYPES: Partial<Record<FeedFilter, string[]>> = {
@@ -63,9 +66,12 @@ export async function getIntelligenceFeed(db: PrismaClient, organizationId: stri
     }
   }
 
+  const orderBy =
+    query.sort === "NEWEST" ? [{ occurredAt: "desc" as const }] : [{ importanceScore: "desc" as const }, { occurredAt: "desc" as const }];
+
   return db.intelligenceEvent.findMany({
     where,
-    orderBy: [{ importanceScore: "desc" }, { occurredAt: "desc" }],
+    orderBy,
     take: query.limit ?? 50,
     include: {
       deal: { select: { id: true, projectCodename: true, valueMinorUnits: true, enterpriseValueMinorUnits: true, currency: true } },

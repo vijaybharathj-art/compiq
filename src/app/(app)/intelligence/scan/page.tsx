@@ -28,6 +28,7 @@ export default async function ScanPage() {
     getRecentJobs(DEMO_ORG_ID),
     getRecentlyProcessedEmails(DEMO_ORG_ID),
   ]);
+  const isJobRunning = jobs.some((j) => j.status === "RUNNING");
 
   return (
     <div className="pb-10">
@@ -38,7 +39,7 @@ export default async function ScanPage() {
       <IntelligenceSubNav />
 
       <div className="flex flex-col gap-5 px-8 pt-5">
-        <ScanRunner pendingCount={pendingCount} />
+        <ScanRunner pendingCount={pendingCount} initiallyRunning={isJobRunning} />
 
         <Card>
           <CardHeader className="flex-row items-center gap-2">

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ChevronLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ClientEngagements } from "@/components/clients/client-engagements";
 import {
@@ -14,6 +15,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { clientRepository } from "@/lib/data";
 import { computeRelationshipInsights } from "@/lib/insights";
 import { computeClientAttention } from "@/lib/intelligence/client-attention";
+import { createTaskFromRecommendation } from "@/lib/actions/intelligence-actions";
 import { getPrismaClient } from "@/lib/db";
 import { DEMO_ORG_ID } from "@/lib/constants";
 import { Radar, Sparkles, Target } from "lucide-react";
@@ -33,6 +35,10 @@ export default async function ClientDetailPage({
   const { clientId } = await params;
   const client = await clientRepository.get(clientId);
   if (!client) notFound();
+  // See the matching check in deals/[dealId]/page.tsx — clientRepository.get()
+  // (Phase 1) has no organization filter of its own (spec §57).
+  const belongsToOrg = await getPrismaClient().client.count({ where: { id: clientId, organizationId: DEMO_ORG_ID } });
+  if (!belongsToOrg) notFound();
   const insights = computeRelationshipInsights(client);
   const attentionEntries = await computeClientAttention(getPrismaClient(), DEMO_ORG_ID);
   const attention = attentionEntries.find((a) => a.clientId === clientId);
@@ -104,16 +110,43 @@ export default async function ClientDetailPage({
             <CardHeader className="flex-row items-center gap-2 pb-1">
               <Target className="size-4 text-accent" />
               <CardTitle>Client Attention</CardTitle>
+              {attention && (
+                <Badge variant="warning" className="ml-auto">
+                  Attention Required
+                </Badge>
+              )}
             </CardHeader>
             {attention ? (
-              <div className="flex flex-col gap-2 px-5 pb-4 pt-1 text-sm">
+              <div className="flex flex-col gap-3 px-5 pb-4 pt-1 text-sm">
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-muted-foreground">
                   <span>{attention.activeDealCount} active deal{attention.activeDealCount === 1 ? "" : "s"}</span>
-                  {attention.inactiveDealCount > 0 && <span>{attention.inactiveDealCount} inactive</span>}
-                  {attention.upcomingDeadlineCount > 0 && <span>{attention.upcomingDeadlineCount} deadline{attention.upcomingDeadlineCount === 1 ? "" : "s"} this week</span>}
                   {attention.openOpportunityCount > 0 && <span>{attention.openOpportunityCount} open opportunit{attention.openOpportunityCount === 1 ? "y" : "ies"}</span>}
                 </div>
-                <p className="font-medium text-foreground">{attention.recommendedAction}</p>
+                {attention.reasons.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Reasons</p>
+                    <ul className="mt-1 list-disc space-y-0.5 pl-4 text-foreground/90">
+                      {attention.reasons.map((r, i) => (
+                        <li key={i}>{r}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <p className="text-xs">
+                  <span className="font-semibold uppercase tracking-wide text-muted-foreground">Recommended: </span>
+                  <span className="text-foreground">{attention.recommendedAction}</span>
+                </p>
+                <form
+                  action={createTaskFromRecommendation.bind(null, {
+                    clientId,
+                    title: attention.recommendedAction,
+                    description: attention.reasons.join("; ") || undefined,
+                  })}
+                >
+                  <Button type="submit" size="sm" variant="outline">
+                    Create Task
+                  </Button>
+                </form>
               </div>
             ) : (
               <p className="px-5 pb-4 pt-1 text-sm text-muted-foreground">No attention items right now.</p>

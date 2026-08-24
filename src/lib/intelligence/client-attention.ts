@@ -14,6 +14,8 @@ export interface ClientAttentionEntry {
   inactiveDealCount: number;
   upcomingDeadlineCount: number;
   openOpportunityCount: number;
+  /** The individual grounded reasons behind recommendedAction (spec §26's bulleted "Reasons:" list). */
+  reasons: string[];
   recommendedAction: string;
 }
 
@@ -64,6 +66,7 @@ export async function computeClientAttention(db: PrismaClient, organizationId: s
       inactiveDealCount,
       upcomingDeadlineCount,
       openOpportunityCount,
+      reasons,
       recommendedAction:
         inactiveDealCount > 0
           ? "Schedule a relationship call."

@@ -39,6 +39,9 @@ type RiskStatusValue = "ACKNOWLEDGED" | "DISMISSED" | "RESOLVED" | "OPEN";
 
 async function setRiskStatus(riskId: string, status: RiskStatusValue, resolutionNote?: string) {
   const userId = await requireUserId();
+  // Scoped to DEMO_ORG_ID (spec §57-58) — findFirstOrThrow before the write
+  // rather than trusting the id alone.
+  await prisma.risk.findFirstOrThrow({ where: { id: riskId, organizationId: DEMO_ORG_ID } });
   const risk = await prisma.risk.update({ where: { id: riskId }, data: { status, resolutionNote } });
 
   const actionLabel =
@@ -72,8 +75,13 @@ export async function resolveRisk(riskId: string, resolutionNote?: string) {
 // Inactivity exceptions (spec §50)
 // ---------------------------------------------------------------------------
 
+async function requireDealInOrg(dealId: string) {
+  await prisma.deal.findFirstOrThrow({ where: { id: dealId, organizationId: DEMO_ORG_ID } });
+}
+
 export async function ignoreInactivity(dealId: string, reason: string, ignoredUntil?: string) {
   const userId = await requireUserId();
+  await requireDealInOrg(dealId);
   await setInactivityException(prisma, dealId, {
     reason,
     ignoredUntil: ignoredUntil ? new Date(ignoredUntil) : null,
@@ -90,6 +98,7 @@ export async function ignoreInactivity(dealId: string, reason: string, ignoredUn
 
 export async function clearInactivityIgnore(dealId: string) {
   const userId = await requireUserId();
+  await requireDealInOrg(dealId);
   await clearInactivityException(prisma, dealId);
   await writeAuditLog(userId, "Inactivity exception cleared", "Deal", dealId);
   revalidatePath("/intelligence");
@@ -113,4 +122,39 @@ export async function generateEveningBriefingAction(): Promise<void> {
   const briefing = await generateEveningBriefing(DEMO_ORG_ID, userId);
   await writeAuditLog(userId, "Briefing generated", "Briefing", briefing.id, { type: "EVENING" });
   revalidatePath("/intelligence/evening");
+}
+
+// ---------------------------------------------------------------------------
+// Banker-initiated task creation from a recommendation (spec §26 "Create
+// Task" on Client Attention). Deliberately NOT marked auto-generated —
+// unlike the pipeline's own task generation (src/lib/pipeline/generation.ts),
+// this task has no sourceEmailId, so the Task UX's "AUTO-GENERATED" badge
+// correctly never applies to it (spec §27's fact-vs-recommendation
+// distinction extends to how a task itself was created).
+// ---------------------------------------------------------------------------
+
+export async function createTaskFromRecommendation(input: { clientId?: string; dealId?: string; title: string; description?: string }) {
+  const userId = await requireUserId();
+  if (input.dealId) await requireDealInOrg(input.dealId);
+  if (input.clientId) await prisma.client.findFirstOrThrow({ where: { id: input.clientId, organizationId: DEMO_ORG_ID } });
+  const task = await prisma.task.create({
+    data: {
+      organizationId: DEMO_ORG_ID,
+      clientId: input.clientId,
+      dealId: input.dealId,
+      title: input.title,
+      description: input.description,
+      ownerId: userId,
+      priority: "MEDIUM",
+      status: "TODO",
+    },
+  });
+  await writeAuditLog(userId, "Task created from recommendation", "Task", task.id, {
+    clientId: input.clientId ?? null,
+    dealId: input.dealId ?? null,
+  });
+  revalidatePath("/tasks");
+  revalidatePath("/dashboard");
+  if (input.clientId) revalidatePath(`/clients/${input.clientId}`);
+  if (input.dealId) revalidatePath(`/deals/${input.dealId}`);
 }

@@ -111,6 +111,7 @@ async function buildOpportunitiesSection(organizationId: string, since: Date) {
 interface AssembledBriefing {
   content: BriefingContent;
   summary: BriefingSummary;
+  narrationFailed: boolean;
 }
 
 async function assembleContent(organizationId: string, userId: string, since: Date, now: Date): Promise<AssembledBriefing> {
@@ -149,7 +150,16 @@ async function assembleContent(organizationId: string, userId: string, since: Da
     opportunities: opportunities.map((o) => ({ clientName: o.clientName, signalText: o.signalText })),
   };
 
-  const { narrative } = await getAIProvider().summarizeBriefing(facts);
+  // AI narration failure must never take the deterministic sections down
+  // with it (spec §72-73) — everything above this point is already real,
+  // computed data; only the prose summary is at risk from an AI call.
+  let narrative = "";
+  let narrationFailed = false;
+  try {
+    narrative = (await getAIProvider().summarizeBriefing(facts)).narrative;
+  } catch {
+    narrationFailed = true;
+  }
 
   const content = parseBriefingContent({
     narrative,
@@ -162,7 +172,7 @@ async function assembleContent(organizationId: string, userId: string, since: Da
   });
   const summary = parseBriefingSummary(facts.summary);
 
-  return { content, summary };
+  return { content, summary, narrationFailed };
 }
 
 function collectSourceEventIds(content: BriefingContent): string[] {
@@ -180,9 +190,10 @@ async function generateBriefing(organizationId: string, userId: string, type: "M
   const fallbackHours = type === "MORNING" ? 24 : 12;
   const since = await windowStartFor(organizationId, userId, fallbackHours, now);
 
-  const { content, summary } = await assembleContent(organizationId, userId, since, now);
+  const { content, summary, narrationFailed } = await assembleContent(organizationId, userId, since, now);
   const dateOnly = new Date(now.toISOString().slice(0, 10));
   const sourceEventIds = collectSourceEventIds(content);
+  const status = narrationFailed ? "FAILED" : "GENERATED";
 
   return db.briefing.upsert({
     where: { organizationId_userId_type_date: { organizationId, userId, type, date: dateOnly } },
@@ -196,14 +207,14 @@ async function generateBriefing(organizationId: string, userId: string, type: "M
       sourceEventIds,
       model: AI_MODEL_LABEL,
       promptVersion: "briefing-summary-v1",
-      status: "GENERATED",
+      status,
     },
     update: {
       summary: summary as never,
       content: content as never,
       sourceEventIds,
       model: AI_MODEL_LABEL,
-      status: "GENERATED",
+      status,
       generatedAt: now,
     },
   });

@@ -94,8 +94,11 @@ export async function updateNotificationPreferences(formData: FormData) {
 export async function updateDealStage(dealId: string, newStageKey: string) {
   const userId = await requireUserId();
 
-  const deal = await prisma.deal.findUniqueOrThrow({
-    where: { id: dealId },
+  // Scoped to DEMO_ORG_ID — never trust a client-supplied id alone (spec
+  // §57-58: every mutation must verify the target entity belongs to the
+  // caller's organization, not just that the caller is authenticated).
+  const deal = await prisma.deal.findFirstOrThrow({
+    where: { id: dealId, organizationId: DEMO_ORG_ID },
     include: { currentStage: true, workflow: { include: { stages: true } } },
   });
   const newStage = deal.workflow.stages.find((s) => s.key === newStageKey);
@@ -146,7 +149,7 @@ export async function updateTaskStatus(taskId: string, newStatus: TaskStatusValu
   const userId = await requireUserId();
   if (!TASK_STATUSES.includes(newStatus)) throw new Error(`Unknown task status "${newStatus}".`);
 
-  const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId } });
+  const task = await prisma.task.findFirstOrThrow({ where: { id: taskId, organizationId: DEMO_ORG_ID } });
   if (task.status === newStatus) return;
 
   await prisma.task.update({ where: { id: taskId }, data: { status: newStatus } });
@@ -177,10 +180,11 @@ export async function reviewIntelligenceEvent(
   status: "REVIEWED" | "DISMISSED",
 ) {
   const userId = await requireUserId();
-  await prisma.intelligenceEvent.update({
-    where: { id: eventId },
+  const { count } = await prisma.intelligenceEvent.updateMany({
+    where: { id: eventId, organizationId: DEMO_ORG_ID },
     data: { reviewStatus: status },
   });
+  if (count === 0) throw new Error(`Intelligence event ${eventId} not found.`);
   await writeAuditLog(
     userId,
     status === "DISMISSED" ? "Dismissed AI suggestion" : "Accepted AI suggestion",

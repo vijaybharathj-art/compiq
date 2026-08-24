@@ -14,6 +14,8 @@ import { intelligenceItems as heroIntelligence } from "@/lib/data/fixtures/intel
 import { organization as orgFixture } from "@/lib/data/fixtures/organization";
 import { auditLogEntries as heroAuditLog } from "@/lib/data/fixtures/audit-log";
 import { DEMO_ORG_ID } from "@/lib/constants";
+import { computeImportanceScore } from "@/lib/intelligence/importance";
+import type { IntelligenceEventType } from "@/lib/pipeline/intelligence-events";
 
 import { companyPool, companiesByArchetype } from "./seed/companies";
 import { createRng, pick, randomInt, daysAgoIso, daysFromIso } from "./seed/rng";
@@ -1072,11 +1074,46 @@ async function seedDealEvents(
 // Intelligence feed
 // ---------------------------------------------------------------------------
 
+// A deterministic, category-level proxy for the finer-grained
+// IntelligenceEventType computeImportanceScore() actually wants — the seed
+// only tracks the broader category per row, so this infers the closest
+// event type rather than leaving every seeded row scoreless (importance
+// 0 / tier "INFORMATIONAL" on literally every historical event would make
+// "ranked by importance" look broken in the very first screen a banker
+// sees, even though the live pipeline scores real events correctly).
+const CATEGORY_TO_EVENT_TYPE: Record<string, IntelligenceEventType> = {
+  DEAL_CHANGE: "STAGE_CHANGED",
+  CLIENT_ACTIVITY: "CLIENT_ACTIVITY",
+  TASK: "TASK_CREATED",
+  OPPORTUNITY: "OPPORTUNITY_DETECTED",
+  RISK: "RISK_DETECTED",
+  IMPORTANT_EMAIL: "IMPORTANT_EMAIL",
+};
+
 async function seedIntelligenceEvents(
   allDeals: SeedDeal[],
   fillerDealIds: Set<string>,
   emailIndex: { emails: SeedEmail[]; heroEmailIndex: Map<string, string> },
 ) {
+  const dealById = new Map(allDeals.map((d) => [d.id, d]));
+
+  function scoreFor(
+    category: string,
+    dealId: string | null,
+    confidencePercent: number | null,
+    occurredAt: Date,
+  ): number {
+    const deal = dealId ? dealById.get(dealId) : undefined;
+    return computeImportanceScore({
+      eventType: CATEGORY_TO_EVENT_TYPE[category] ?? "CLIENT_ACTIVITY",
+      dealValueMinorUnits: deal ? (deal.enterpriseValueMinorUnits ?? deal.valueMinorUnits) : null,
+      dealPriority: deal?.priority ?? null,
+      confidencePercent: confidencePercent ?? undefined,
+      occurredAt,
+      now: new Date(NOW),
+    });
+  }
+
   const rows: {
     id: string;
     organizationId: string;
@@ -1088,6 +1125,7 @@ async function seedIntelligenceEvents(
     deltaFrom: string | null;
     deltaTo: string | null;
     confidencePercent: number | null;
+    importanceScore: number;
     sourceEmailId: string | null;
     reviewStatus: "NEW" | "REVIEWED" | "DISMISSED";
     occurredAt: Date;
@@ -1096,6 +1134,7 @@ async function seedIntelligenceEvents(
   let n = 0;
   for (const item of heroIntelligence) {
     const realEmailId = item.evidence ? emailIndex.heroEmailIndex.get(item.evidence.emailId) ?? null : null;
+    const occurredAt = new Date(item.occurredAt);
     rows.push({
       id: `intel-${n++}`,
       organizationId: ORG_ID,
@@ -1107,9 +1146,10 @@ async function seedIntelligenceEvents(
       deltaFrom: item.delta?.from ?? null,
       deltaTo: item.delta?.to ?? null,
       confidencePercent: item.confidencePercent ?? null,
+      importanceScore: scoreFor(item.category, item.dealId ?? null, item.confidencePercent ?? null, occurredAt),
       sourceEmailId: realEmailId,
       reviewStatus: "NEW",
-      occurredAt: new Date(item.occurredAt),
+      occurredAt,
     });
   }
 
@@ -1130,11 +1170,13 @@ async function seedIntelligenceEvents(
           deltaFrom: null,
           deltaTo: d.currentStageLabel,
           confidencePercent: randomInt(rng, 75, 96),
+          importanceScore: scoreFor("DEAL_CHANGE", d.id, null, occurredAt),
           sourceEmailId: null,
           reviewStatus: pick(rng, ["NEW", "NEW", "REVIEWED"] as const),
           occurredAt,
         });
       } else if (kind === "CLIENT_ACTIVITY") {
+        const confidencePercent = randomInt(rng, 70, 90);
         rows.push({
           id: `intel-${n++}`,
           organizationId: ORG_ID,
@@ -1145,12 +1187,14 @@ async function seedIntelligenceEvents(
           detail: "Multiple exchanges detected over the past week.",
           deltaFrom: null,
           deltaTo: null,
-          confidencePercent: randomInt(rng, 70, 90),
+          confidencePercent,
+          importanceScore: scoreFor("CLIENT_ACTIVITY", d.id, confidencePercent, occurredAt),
           sourceEmailId: null,
           reviewStatus: "NEW",
           occurredAt,
         });
       } else {
+        const confidencePercent = randomInt(rng, 60, 82);
         rows.push({
           id: `intel-${n++}`,
           organizationId: ORG_ID,
@@ -1161,7 +1205,8 @@ async function seedIntelligenceEvents(
           detail: "Signal detected in recent correspondence; not yet a mandate.",
           deltaFrom: null,
           deltaTo: null,
-          confidencePercent: randomInt(rng, 60, 82),
+          confidencePercent,
+          importanceScore: scoreFor("OPPORTUNITY", null, confidencePercent, occurredAt),
           sourceEmailId: null,
           reviewStatus: "NEW",
           occurredAt,
@@ -1169,6 +1214,7 @@ async function seedIntelligenceEvents(
       }
     }
     if (d.riskStatus === "AT_RISK") {
+      const riskOccurredAt = new Date(daysAgoIso(NOW, randomInt(rng, 0, 3)));
       rows.push({
         id: `intel-${n++}`,
         organizationId: ORG_ID,
@@ -1180,9 +1226,10 @@ async function seedIntelligenceEvents(
         deltaFrom: null,
         deltaTo: null,
         confidencePercent: null,
+        importanceScore: scoreFor("RISK", d.id, null, riskOccurredAt),
         sourceEmailId: null,
         reviewStatus: "NEW",
-        occurredAt: new Date(daysAgoIso(NOW, randomInt(rng, 0, 3))),
+        occurredAt: riskOccurredAt,
       });
     }
   }

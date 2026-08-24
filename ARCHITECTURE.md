@@ -150,6 +150,28 @@ decisions yourself and document them"):
     inactivity gap is an estimate of "how long has this gone untouched"
     (weekends shouldn't make a deal look more stale than it is). See
     `PHASE4_DEAL_INTELLIGENCE.md` §4 and §7.
+20. **The generic six-tile CRM stat grid was removed from the dashboard,
+    not preserved alongside the new intelligence sections.** Phase 4.5's
+    explicit goal was that the product stop feeling like a generic CRM;
+    keeping both would have hedged that decision rather than made it. The
+    numbers it showed (active deals, total value) remain one click away on
+    `/deals` — nothing was deleted, only de-emphasized on the first
+    screen. See `PHASE4_5_PRODUCTION_HARDENING.md` §3.
+21. **`MomentumSummaryCard` computes momentum for at most 5 deals (the
+    ones already in Top Priorities), never the full portfolio**, on the
+    dashboard specifically. `computeMomentum()` is several queries per
+    deal; iterating every active deal on every dashboard load would be
+    exactly the N+1-shaped cost this phase was supposed to reduce. Deal
+    Detail's own momentum panel is unaffected — it computes for the one
+    deal being viewed.
+22. **Organization scoping was retrofitted onto every Server Action
+    mutation and the two Phase 4.5-touched detail pages, but deliberately
+    not onto the entire pre-existing `prisma-repository.ts` read layer.**
+    That file has no `organizationId` filtering anywhere and predates this
+    phase; fixing it properly is a large, cross-cutting change explicitly
+    out of scope for a phase whose own brief says "do not rebuild Phase
+    1-4." Reported as the top Phase 5 security item instead of attempted
+    as an unreviewed rewrite. See `PHASE4_5_PRODUCTION_HARDENING.md` §6.
 
 ## 3. Provider abstractions
 

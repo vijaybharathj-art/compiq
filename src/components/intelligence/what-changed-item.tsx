@@ -1,9 +1,10 @@
 import Link from "next/link";
-import { ArrowRight, Quote } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ConfidenceBadge } from "@/components/shared/badges";
-import { formatDateTime, formatMoney, relativeTimeFromNow } from "@/lib/format";
+import { TrustBadge, IntelligenceLabelChip, type IntelligenceLabelKind } from "@/components/shared/badges";
+import { WhyAmISeeingThis } from "@/components/shared/why-am-i-seeing-this";
+import { WhyThisMatters } from "@/components/shared/why-this-matters";
+import { formatMoney, relativeTimeFromNow } from "@/lib/format";
 import { importanceTier } from "@/lib/intelligence/importance";
 import { reviewIntelligenceEvent } from "@/lib/actions/mutations";
 import { DEMO_NOW } from "@/lib/constants";
@@ -17,6 +18,18 @@ const CATEGORY_LABEL: Record<IntelligenceCategory, string> = {
   OPPORTUNITY: "Opportunity",
   RISK: "Risk",
   IMPORTANT_EMAIL: "Important Email",
+};
+
+// A deterministic, category-level mapping of what kind of statement a card
+// is making (spec §11) — not a per-event judgment call, so it stays
+// consistent and auditable rather than another AI decision.
+const CATEGORY_LABEL_KIND: Record<IntelligenceCategory, IntelligenceLabelKind> = {
+  DEAL_CHANGE: "FACT",
+  CLIENT_ACTIVITY: "DETECTED_SIGNAL",
+  TASK: "RECOMMENDATION",
+  OPPORTUNITY: "DETECTED_SIGNAL",
+  RISK: "DETECTED_SIGNAL",
+  IMPORTANT_EMAIL: "DETECTED_SIGNAL",
 };
 
 const TIER_VARIANT = {
@@ -60,6 +73,7 @@ export function WhatChangedFeedItem({ item, now = DEMO_NOW }: { item: WhatChange
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant={TIER_VARIANT[tier]}>{tier}</Badge>
+          <IntelligenceLabelChip kind={CATEGORY_LABEL_KIND[item.category]} />
           <Badge variant="outline">{CATEGORY_LABEL[item.category]}</Badge>
           {item.deal && (
             <span className="text-xs font-medium text-muted-foreground">
@@ -73,7 +87,7 @@ export function WhatChangedFeedItem({ item, now = DEMO_NOW }: { item: WhatChange
           <span className="ml-auto text-xs text-muted-foreground">{relativeTimeFromNow(item.occurredAt.toISOString(), now)}</span>
         </div>
         <p className="mt-1.5 text-sm font-medium text-foreground">{item.headline}</p>
-        {item.detail && <p className="mt-0.5 text-sm text-muted-foreground">{item.detail}</p>}
+        {item.detail && <WhyThisMatters text={item.detail} />}
         {item.deltaFrom && item.deltaTo && (
           <p className="mt-1.5 flex items-center gap-1.5 text-sm tabular-nums">
             <span className="text-muted-foreground">{item.deltaFrom}</span>
@@ -82,28 +96,15 @@ export function WhatChangedFeedItem({ item, now = DEMO_NOW }: { item: WhatChange
           </p>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-3">
-          <ConfidenceBadge percent={item.confidencePercent ?? undefined} />
+          <TrustBadge confidencePercent={item.confidencePercent} />
           {item.sourceEmail && (
-            <Popover>
-              <PopoverTrigger asChild>
-                <button className="inline-flex items-center gap-1 text-xs text-accent hover:underline underline-offset-2">
-                  <Quote className="size-3" />
-                  View evidence
-                </button>
-              </PopoverTrigger>
-              <PopoverContent className="w-80">
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{item.sourceEmail.fromName ?? item.sourceEmail.fromAddress}</span>
-                    <span className="text-xs text-muted-foreground">{formatDateTime(item.sourceEmail.receivedAt.toISOString())}</span>
-                  </div>
-                  <p className="text-xs font-medium text-foreground">{item.sourceEmail.subject}</p>
-                  <blockquote className="border-l-2 border-accent/40 pl-2.5 text-sm text-foreground/90 italic">
-                    &ldquo;{item.sourceEmail.bodyText.slice(0, 220)}&rdquo;
-                  </blockquote>
-                </div>
-              </PopoverContent>
-            </Popover>
+            <WhyAmISeeingThis
+              source={item.sourceEmail.fromName ?? item.sourceEmail.fromAddress}
+              occurredAt={item.sourceEmail.receivedAt}
+              dealCodename={item.deal?.projectCodename}
+              evidenceQuote={item.sourceEmail.bodyText}
+              confidencePercent={item.confidencePercent}
+            />
           )}
           {href && (
             <Link href={href} className="text-xs text-muted-foreground hover:text-accent hover:underline underline-offset-2">

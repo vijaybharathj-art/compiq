@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { PIPELINE_STAGES } from "@/lib/pipeline/stages";
 import { triggerEmailScan, type RunScanResult } from "@/lib/actions/pipeline-actions";
+import { cn } from "@/lib/utils";
 
 // The Server Action runs the pipeline to completion synchronously (no
 // background worker — see triggerEmailScan's own comment and spec §44),
@@ -19,10 +20,21 @@ import { triggerEmailScan, type RunScanResult } from "@/lib/actions/pipeline-act
 // nothing here is ever hardcoded (spec §38).
 const STAGE_INTERVAL_MS = 500;
 
-type ScanState = { status: "idle" } | { status: "running"; stageIndex: number } | { status: "done"; result: RunScanResult } | { status: "error"; message: string };
+type ScanState =
+  | { status: "idle" }
+  | { status: "running"; stageIndex: number }
+  | { status: "running_elsewhere" }
+  | { status: "done"; result: RunScanResult }
+  | { status: "error"; message: string };
 
-export function ScanRunner({ pendingCount }: { pendingCount: number }) {
-  const [state, setState] = useState<ScanState>({ status: "idle" });
+export function ScanRunner({ pendingCount, initiallyRunning }: { pendingCount: number; initiallyRunning?: boolean }) {
+  // "running_elsewhere" covers a page load that lands mid-scan (a second
+  // tab, another banker in the same org) — the server already knows a job
+  // is RUNNING (spec §34), so this never has to wait for a failed click to
+  // find out. There's no real per-stage signal to animate here (unlike the
+  // "running" state this same component drives when it started the scan
+  // itself), so it just offers a refresh rather than faking progress.
+  const [state, setState] = useState<ScanState>(initiallyRunning ? { status: "running_elsewhere" } : { status: "idle" });
   const router = useRouter();
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -74,6 +86,18 @@ export function ScanRunner({ pendingCount }: { pendingCount: number }) {
           </div>
         )}
 
+        {state.status === "running_elsewhere" && (
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Loader2 className="size-4 animate-spin text-accent" />
+              Scan in progress
+            </div>
+            <Button size="sm" variant="outline" onClick={() => router.refresh()}>
+              Refresh
+            </Button>
+          </div>
+        )}
+
         {state.status === "running" && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-sm font-medium text-foreground">
@@ -81,18 +105,27 @@ export function ScanRunner({ pendingCount }: { pendingCount: number }) {
               {PIPELINE_STAGES[state.stageIndex]}…
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {PIPELINE_STAGES.map((stage, i) => (
-                <span
-                  key={stage}
-                  className={
-                    i <= state.stageIndex
-                      ? "rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-medium text-accent"
-                      : "rounded-full bg-surface-raised px-2.5 py-1 text-[11px] text-muted-foreground"
-                  }
-                >
-                  {stage}
-                </span>
-              ))}
+              {PIPELINE_STAGES.map((stage, i) => {
+                // Three visually distinct states per spec §32: completed
+                // (checked, solid), processing (the current one, pulsing),
+                // pending (muted) — not just a binary highlighted/not.
+                const isCompleted = i < state.stageIndex;
+                const isProcessing = i === state.stageIndex;
+                return (
+                  <span
+                    key={stage}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                      isCompleted && "bg-positive/15 text-positive",
+                      isProcessing && "animate-pulse bg-accent/15 text-accent",
+                      !isCompleted && !isProcessing && "bg-surface-raised font-normal text-muted-foreground",
+                    )}
+                  >
+                    {isCompleted && <CheckCircle2 className="size-2.5" />}
+                    {stage}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}
