@@ -68,18 +68,20 @@ PRODUCT_SPEC), side (`BUY_SIDE | SELL_SIDE | N_A`), valueMinorUnits,
 currency, enterpriseValueMinorUnits, equityValueMinorUnits, workflowId,
 currentStageId, previousStageId, mandateStatus (`NOT_MANDATED | MANDATED |
 CO_MANDATED | LOST`), probabilityPercent, leadBankerId, createdAt,
-lastActivityAt, nextMilestone, nextMilestoneDate, expectedCloseDate,
-priority (`LOW | MEDIUM | HIGH | CRITICAL`), riskStatus (`ON_TRACK |
-WATCH | AT_RISK`), riskNote? (the human-readable signal behind
-`riskStatus`, e.g. what the pipeline's risk-detection stage matched —
-Phase 3), aiConfidencePercent (rolling confidence in the record's
+lastActivityAt, lastMeaningfulActivityAt? (Phase 4 — inactivity-tracking
+anchor, distinct from `lastActivityAt`), nextMilestone, nextMilestoneDate,
+expectedCloseDate, priority (`LOW | MEDIUM | HIGH | CRITICAL`), riskStatus
+(`ON_TRACK | WATCH | AT_RISK`), riskNote? (the human-readable signal
+behind `riskStatus`, e.g. what the pipeline's risk-detection stage matched
+— Phase 3), aiConfidencePercent (rolling confidence in the record's
 current AI-maintained fields).
 
 Relations: `client`, `company`, `sector`, `bankingService`, `workflow`,
 `currentStage`, `previousStage`, `leadBanker`, `team[]` (DealTeamMember),
 `participants[]` (DealParticipant), `tasks[]`, `documents[]`, `meetings[]`,
 `events[]`, `aiExtractions[]`, `opportunities[]` (if the deal originated
-from one).
+from one), `risks[]`, `valuationObservations[]`, `inactivityException?`
+(Phase 4).
 
 ### Email intelligence
 
@@ -141,6 +143,50 @@ Full pipeline behavior that reads/writes these tables:
   to persist against. Added in Phase 1 alongside the live database — see
   ARCHITECTURE.md §2.8.
 
+### Deal intelligence (Phase 4)
+
+Full engine behavior that reads/writes these tables:
+`PHASE4_DEAL_INTELLIGENCE.md`.
+
+- **Risk** — organizationId, dealId, riskType (`CLIENT_SILENCE |
+  BUYER_CONCERN | VALUATION_PRESSURE | TIMELINE_DELAY |
+  FINANCING_UNCERTAINTY | DILIGENCE_ISSUE | COMPETITIVE_PRESSURE |
+  MANAGEMENT_CONCERN | DEAL_STALL | UNRESPONSIVE_COUNTERPARTY | OTHER`),
+  description, confidencePercent, severity (`LOW | MEDIUM | HIGH |
+  CRITICAL`), sourceEmailId?, intelligenceEventId? (unique — one Risk per
+  originating event), status (`OPEN | ACKNOWLEDGED | DISMISSED |
+  RESOLVED` — named `RiskItemStatus`, distinct from `Deal.riskStatus`'s
+  own `RiskStatus` enum to avoid a naming collision), resolutionNote?,
+  detectedAt, updatedAt.
+- **DealValuationObservation** — dealId, valueMinorUnits (BigInt),
+  currency, observationType (`SELLER_EXPECTATION | BUYER_INDICATION |
+  INDICATIVE_BID | FINAL_BID | AGREED_VALUE`), source, sourceEmailId?,
+  confidencePercent, observedAt, createdAt — one row per material
+  valuation figure encountered, not just the deal's current value, so a
+  deal has a real valuation history/trend.
+- **InactivityException** — dealId (unique), reason?, ignoredUntil?,
+  createdById?, createdAt — a banker-settable "ignore inactivity" flag;
+  `runInactivityScan()` skips exempt deals entirely.
+- **Briefing** — organizationId, userId, type (`MORNING | EVENING`), date
+  (`@db.Date`), summary (Json — structured counts), content (Json —
+  structured sections: priorities/dealAdvancements/risks/deadlines/
+  opportunities/recommendedActions/narrative), sourceEventIds (String[] —
+  every `IntelligenceEvent.id` a material statement traces back to),
+  generatedAt, model, promptVersion, status (`GENERATED | FAILED`).
+  `@@unique([organizationId, userId, type, date])` — one briefing per
+  banker per day per type, generated once and stored, not regenerated on
+  every read.
+
+`IntelligenceEvent` gains `importanceScore Int?` — the deterministic 0-100
+score `createIntelligenceEvent()` computes at write time (never an AI
+call, never left null on a genuinely-created event — see
+`PHASE4_DEAL_INTELLIGENCE.md` §1). `Deal` gains
+`lastMeaningfulActivityAt DateTime?` — a dedicated inactivity-tracking
+column, distinct from the pre-existing `lastActivityAt`, bumped only at
+specific write sites (never by, e.g., an irrelevant email). `Notification`
+gains `priority` (`CRITICAL | HIGH | MEDIUM | LOW`, default `MEDIUM`) and
+`dismissedAt DateTime?`.
+
 ### Work
 - **Task** — organizationId, dealId?, clientId?, title, description,
   ownerId, priority, dueDate, status (`TODO | IN_PROGRESS | COMPLETED |
@@ -158,6 +204,8 @@ Full pipeline behavior that reads/writes these tables:
 
 ### Platform
 - **Notification** — userId, type, title, body, readAt, linkHref,
+  priority (`CRITICAL | HIGH | MEDIUM | LOW`, Phase 4 — set from the
+  triggering `IntelligenceEvent.importanceScore`), dismissedAt? (Phase 4),
   createdAt.
 - **AuditLog** — organizationId, actorUserId?, action, entityType,
   entityId, metadata (JSON), createdAt — every AI auto-apply and every
@@ -182,6 +230,10 @@ Deal 1—* IntelligenceEvent   (also Client 1—*, Email 1—*, AiExtraction 1�
 Email 1—* EmailParticipant *—0..1 Contact / User
 Email 1—0..1 EmailClassification
 EmailProcessingJob 1—* Email (processed by), 1—* EmailProcessingLog
+Deal 1—* Risk 0..1—1 IntelligenceEvent   (also 0..1—1 Email)
+Deal 1—* DealValuationObservation
+Deal 0..1—1 InactivityException
+Organization 1—* Briefing *—1 User
 ```
 
 ## Reproducing the database
@@ -194,16 +246,18 @@ npx tsx prisma/seed.ts   # truncates app tables, then repopulates everything
 
 `prisma/seed.ts` is idempotent — it truncates all application tables before
 inserting, so re-running it always produces the same dataset (10 clients,
-20 companies, 25 deals, 202 emails, 50+ intelligence events, 40+ tasks,
+20 companies, 25 deals, 203 emails, 50+ intelligence events, 40+ tasks,
 100+ timeline events). It reuses `src/lib/data/fixtures/*` for six
 hand-curated "hero" deals (Falcon, Atlas, Orion, Phoenix, Everest, Apollo)
 and generates the rest programmatically via `prisma/seed/` helpers (seeded
-RNG, a 20-company pool, email/task content templates). Of the 202 emails,
+RNG, a 20-company pool, email/task content templates). Of the 203 emails,
 ~112 are pre-processed narrative history (`processingStatus: PROCESSED`);
-the remaining ~90 (`prisma/seed/backlog.ts`) are seeded `PENDING` — the
+the remaining ~91 (`prisma/seed/backlog.ts`) are seeded `PENDING` — the
 unprocessed mailbox **Run Scan** (`PHASE3_EMAIL_INTELLIGENCE.md`) actually
-works through. Reseeding therefore also resets the scan backlog to
-pristine.
+works through, including the Phase 4 demo scenarios (Falcon stage
+advancement, Orion's $390M→$420M valuation increase, Atlas inactivity —
+see `PHASE4_DEAL_INTELLIGENCE.md` §15). Reseeding therefore also resets
+the scan backlog to pristine.
 
 ## Why Prisma 7 specifics matter here
 

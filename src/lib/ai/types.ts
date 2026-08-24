@@ -65,10 +65,37 @@ export interface DealMatchResult {
   promptVersion: string;
 }
 
+// The exact, and only, facts a briefing narrative may reference (spec
+// §10-11, §44-45) — every field here traces back to a real database
+// record. Numeric/string values are pre-formatted by the caller so the
+// provider is never tempted to recompute a percentage or round a dollar
+// figure itself.
+export interface BriefingFacts {
+  date: string;
+  summary: {
+    dealsChanged: number;
+    dealsAdvanced: number;
+    risks: number;
+    opportunities: number;
+    tasksCreated: number;
+  };
+  priorities: { headline: string; reason: string }[];
+  dealAdvancements: { dealCodename: string; previousStage: string; newStage: string }[];
+  risks: { dealCodename?: string; description: string; severity: string }[];
+  deadlines: { title: string; dealCodename?: string; dueLabel: string }[];
+  opportunities: { clientName: string; signalText: string }[];
+}
+
+export interface BriefingNarrativeResult {
+  narrative: string;
+  promptVersion: string;
+}
+
 export interface AIProvider {
   classifyRelevance(email: EmailInput, context: ClassificationContext): Promise<RelevanceResult>;
   extractEntities(email: EmailInput, context: DealContext): Promise<ExtractionResult>;
   matchDeal(extraction: ExtractionResult, candidates: DealCandidate[]): Promise<DealMatchResult>;
+  summarizeBriefing(facts: BriefingFacts): Promise<BriefingNarrativeResult>;
 }
 
 // Re-exported so pipeline code can construct participant role literals

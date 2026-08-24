@@ -2,6 +2,8 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import type { ExtractionResult } from "@/lib/ai/extraction-schema";
 import type { DealMatchDecision } from "./matching";
 import { createIntelligenceEvent } from "./intelligence-events";
+import { recordRisk } from "@/lib/intelligence/risk-engine";
+import { touchMeaningfulActivity } from "@/lib/intelligence/inactivity";
 import type { ScanCounters } from "./types";
 
 // Task generation, meeting detection, risk detection, and opportunity
@@ -105,6 +107,7 @@ export async function generateMeetings(db: PrismaClient, ctx: GenerationContext)
         note: meeting.normalizedDate ? `Scheduled for ${meeting.normalizedDate}.` : `Timing: "${meeting.originalText}".`,
       },
     });
+    await touchMeaningfulActivity(db, ctx.dealId, ctx.occurredAt);
   }
 }
 
@@ -119,21 +122,53 @@ export async function generateRiskEvents(db: PrismaClient, ctx: GenerationContex
   if (ctx.extraction.riskSignals.length === 0) return;
 
   for (const risk of ctx.extraction.riskSignals) {
-    await createIntelligenceEvent(db, {
+    const confidencePercent = Math.min(85, ctx.extraction.confidencePercent);
+
+    const event = await createIntelligenceEvent(db, {
       organizationId: ctx.organizationId,
       eventType: "RISK_DETECTED",
       dealId: ctx.dealId ?? undefined,
       clientId: ctx.clientId ?? undefined,
       headline: risk,
-      confidencePercent: Math.min(85, ctx.extraction.confidencePercent),
+      confidencePercent,
       sourceEmailId: ctx.emailId,
       processingJobId: ctx.processingJobId,
       occurredAt: ctx.occurredAt,
     });
+
     if (ctx.dealId) {
-      await db.deal.update({ where: { id: ctx.dealId }, data: { riskStatus: "WATCH", riskNote: risk } }).catch(() => {
-        // Non-fatal: a deal already AT_RISK shouldn't be downgraded by a
-        // WATCH-level signal — leave riskStatus untouched on conflict.
+      const { severity, momentumWeakening } = await recordRisk(db, {
+        organizationId: ctx.organizationId,
+        dealId: ctx.dealId,
+        signalText: risk,
+        confidencePercent,
+        sourceEmailId: ctx.emailId,
+        intelligenceEventId: event.id,
+        detectedAt: ctx.occurredAt,
+      });
+
+      const nextRiskStatus = severity === "HIGH" || severity === "CRITICAL" ? "AT_RISK" : "WATCH";
+      await db.deal
+        .update({
+          where: { id: ctx.dealId },
+          data: {
+            riskStatus: nextRiskStatus,
+            riskNote: momentumWeakening ? "Deal momentum weakening — multiple recent risk signals." : risk,
+          },
+        })
+        .catch(() => {
+          // Non-fatal: leave riskStatus untouched on a transient conflict.
+        });
+
+      await db.auditLog.create({
+        data: {
+          organizationId: ctx.organizationId,
+          actorUserId: null,
+          action: "Risk detected",
+          entityType: "Risk",
+          entityId: event.id,
+          metadata: { dealId: ctx.dealId, severity, momentumWeakening },
+        },
       });
     }
     counters.risksDetected += 1;

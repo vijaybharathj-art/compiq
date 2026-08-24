@@ -235,6 +235,9 @@ const RISK_PHRASES = [
   "pushed back",
   "gone quiet",
   "gone silent",
+  "may withdraw",
+  "considering withdrawing",
+  "withdraw from the process",
 ];
 
 /** Never asserts risk as fact — every hit is phrased "Potential risk detected" (spec §22). */

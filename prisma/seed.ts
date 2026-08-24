@@ -491,6 +491,12 @@ async function seedDeals(stagesByService: StageMap) {
       leadBankerId: d.leadBankerId,
       createdAt: d.createdAt,
       lastActivityAt: d.lastActivityAt,
+      // Backfills the Inactivity Engine's baseline (PHASE4_DEAL_INTELLIGENCE.md
+      // §16-18) so it reflects real seeded history immediately, before any
+      // scan runs. Atlas's lastActivityAt fixture is deliberately stale
+      // (~9 business days) as the seeded inactivity demo scenario (§73);
+      // the backlog generator also excludes it so Run Scan doesn't refresh it.
+      lastMeaningfulActivityAt: d.lastActivityAt,
       nextMilestone: d.nextMilestone,
       nextMilestoneDate: d.nextMilestoneDate,
       expectedCloseDate: d.expectedCloseDate,

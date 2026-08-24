@@ -23,6 +23,7 @@ banking workflows.
 | `DATABASE_SCHEMA.md` | Entity-relationship reference for `prisma/schema.prisma` |
 | `AI_EXTRACTION_SPEC.md` | Email intelligence pipeline spec, confidence policy, prompts |
 | `PHASE3_EMAIL_INTELLIGENCE.md` | The **live** email-to-deal-intelligence pipeline — modules, provider abstractions, matching engine, jobs/observability |
+| `PHASE4_DEAL_INTELLIGENCE.md` | The **live** Deal Intelligence layer — importance scoring, Risk/Inactivity/Valuation/Deadline/Momentum engines, Briefing engine, What Changed?, Client Attention |
 | `SECURITY.md` | Auth, data isolation, secrets, RBAC, audit policy |
 | `DESIGN_SYSTEM.md` | Visual language, tokens, component conventions |
 
@@ -80,6 +81,26 @@ it via `triggerEmailScan()` (`src/lib/actions/pipeline-actions.ts`);
 suggestions wait for Accept/Reject. `prisma/seed.ts` seeds 202 emails
 total — ~112 pre-processed history plus a ~90-email unprocessed backlog
 that Run Scan actually works through.
+
+## Phase 4: the Deal Intelligence layer is live
+
+`src/lib/intelligence/` implements the full Deal Intelligence layer
+described in `PHASE4_DEAL_INTELLIGENCE.md` on top of Phase 3's pipeline —
+a deterministic, documented 0-100 `importanceScore` on every
+`IntelligenceEvent` (never AI-computed), a Deal Risk Engine, an Inactivity
+Engine (business-day-aware, stage-position-aware), Stage and Valuation
+Intelligence, Deadline Intelligence with overdue escalation, a Task
+Recommendation Engine, a Client Attention Engine, and a Deal Momentum
+Score kept explicitly distinct from risk. **What Changed?**
+(`/intelligence`, rewritten) is the primary intelligence experience;
+**Morning/Evening Briefings** (`/intelligence/morning`,
+`/intelligence/evening`) are generated (manually, via a button — no
+scheduler yet) from real DB events through a structured pipeline and
+stored, never regenerated on every read, with every material statement
+traceable back to a real `IntelligenceEvent` via `Briefing.sourceEventIds`.
+The AI provider only ever narrates already-assembled facts
+(`AIProvider.summarizeBriefing()`) — it never invents a fact or
+recomputes a number that gets rendered directly.
 
 ## Working conventions
 

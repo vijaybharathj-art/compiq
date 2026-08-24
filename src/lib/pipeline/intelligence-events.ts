@@ -1,9 +1,13 @@
 import type { PrismaClient } from "@/generated/prisma/client";
+import { computeImportanceScore, type RiskSeverityInput } from "@/lib/intelligence/importance";
 
 // Intelligence event model (spec §23). One helper, used by every other
 // stage that surfaces a signal (change detection, task/meeting generation,
 // risk/opportunity detection) — keeps the eventType → category mapping in
-// exactly one place instead of duplicated per call site.
+// exactly one place instead of duplicated per call site. Also the single
+// place importanceScore is computed (PHASE4_DEAL_INTELLIGENCE.md §5), so
+// every event gets a score without every call site re-deriving deal
+// materiality/priority itself.
 
 export type IntelligenceEventType =
   | "DEAL_CREATED"
@@ -39,6 +43,15 @@ const CATEGORY_BY_EVENT_TYPE: Record<
   DEAL_INACTIVE: "RISK",
 };
 
+// Event types where the banker is implicitly expected to do something
+// about it, absent a call site overriding requiresAction explicitly.
+const ACTION_IMPLIED_EVENT_TYPES = new Set<IntelligenceEventType>([
+  "RISK_DETECTED",
+  "DEAL_INACTIVE",
+  "DEADLINE_DETECTED",
+  "TASK_CREATED",
+]);
+
 export interface CreateIntelligenceEventInput {
   organizationId: string;
   eventType: IntelligenceEventType;
@@ -53,10 +66,61 @@ export interface CreateIntelligenceEventInput {
   aiExtractionId?: string;
   processingJobId?: string;
   occurredAt: Date;
+  /** Overrides the ACTION_IMPLIED_EVENT_TYPES default for importance scoring. */
+  requiresAction?: boolean;
+  deadlineDaysAway?: number;
+  riskSeverity?: RiskSeverityInput;
 }
 
+// Event types where the same email being (re-)processed could otherwise
+// generate a second, identical row — deduplicated on
+// (sourceEmailId, eventType, deltaFrom, deltaTo) per spec §47.
+const DEDUPE_ON_SOURCE_EMAIL = new Set<IntelligenceEventType>([
+  "STAGE_CHANGED",
+  "DEAL_VALUE_CHANGED",
+  "MANDATE_CHANGED",
+]);
+
 export async function createIntelligenceEvent(db: PrismaClient, input: CreateIntelligenceEventInput) {
-  return db.intelligenceEvent.create({
+  if (input.sourceEmailId && DEDUPE_ON_SOURCE_EMAIL.has(input.eventType)) {
+    const existing = await db.intelligenceEvent.findFirst({
+      where: {
+        sourceEmailId: input.sourceEmailId,
+        eventType: input.eventType,
+        deltaFrom: input.deltaFrom ?? null,
+        deltaTo: input.deltaTo ?? null,
+      },
+    });
+    if (existing) return existing;
+  }
+
+  let dealValueMinorUnits: bigint | null = null;
+  let dealPriority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL" | null = null;
+  let leadBankerId: string | null = null;
+  if (input.dealId) {
+    const deal = await db.deal.findUnique({
+      where: { id: input.dealId },
+      select: { enterpriseValueMinorUnits: true, valueMinorUnits: true, priority: true, leadBankerId: true },
+    });
+    if (deal) {
+      dealValueMinorUnits = deal.enterpriseValueMinorUnits ?? deal.valueMinorUnits;
+      dealPriority = deal.priority;
+      leadBankerId = deal.leadBankerId;
+    }
+  }
+
+  const importanceScore = computeImportanceScore({
+    eventType: input.eventType,
+    dealValueMinorUnits,
+    dealPriority,
+    confidencePercent: input.confidencePercent,
+    requiresAction: input.requiresAction ?? ACTION_IMPLIED_EVENT_TYPES.has(input.eventType),
+    deadlineDaysAway: input.deadlineDaysAway,
+    riskSeverity: input.riskSeverity,
+    occurredAt: input.occurredAt,
+  });
+
+  const event = await db.intelligenceEvent.create({
     data: {
       organizationId: input.organizationId,
       category: CATEGORY_BY_EVENT_TYPE[input.eventType],
@@ -68,10 +132,28 @@ export async function createIntelligenceEvent(db: PrismaClient, input: CreateInt
       deltaFrom: input.deltaFrom,
       deltaTo: input.deltaTo,
       confidencePercent: input.confidencePercent,
+      importanceScore,
       sourceEmailId: input.sourceEmailId,
       aiExtractionId: input.aiExtractionId,
       processingJobId: input.processingJobId,
       occurredAt: input.occurredAt,
     },
   });
+
+  // Only CRITICAL/HIGH-importance events notify (spec §53) — never every
+  // low-value event — and only when there's a deal lead banker to notify.
+  if (importanceScore >= 75 && leadBankerId) {
+    await db.notification.create({
+      data: {
+        userId: leadBankerId,
+        type: input.eventType,
+        title: input.headline,
+        body: input.detail,
+        linkHref: input.dealId ? `/deals/${input.dealId}` : undefined,
+        priority: importanceScore >= 90 ? "CRITICAL" : "HIGH",
+      },
+    });
+  }
+
+  return event;
 }

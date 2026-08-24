@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test";
 
-// End-to-end smoke test covering the full navigable surface of the Phase 1
-// MVP, per the execution brief's test plan: Login, Dashboard, Deals, Deal
-// Detail, Clients, Client Detail, Tasks, Intelligence, Search, Settings,
-// Audit Log. Runs against the real seeded Postgres database — no mocking.
+// End-to-end smoke test covering the full navigable surface of the app, per
+// the execution brief's test plan: Login, Dashboard, Deals, Deal Detail,
+// Clients, Client Detail, Tasks, Intelligence (What Changed?, AI Review,
+// Scan, Morning/Evening Briefing — Phase 4), Search, Settings, Audit Log.
+// Runs against the real seeded Postgres database — no mocking.
 
 test.describe("Tattava Phase 1 smoke test", () => {
   test.beforeEach(async ({ page }) => {
@@ -40,9 +41,11 @@ test.describe("Tattava Phase 1 smoke test", () => {
       { path: "/clients", expectText: "Acme Industries" },
       { path: "/clients/client-acme", expectText: "Relationship Intelligence" },
       { path: "/tasks", expectText: "To Do" },
-      { path: "/intelligence", expectText: "Intelligence Feed" },
+      { path: "/intelligence", expectText: "What Changed?" },
       { path: "/intelligence/review", expectText: "AI Review" },
       { path: "/intelligence/scan", expectText: "Email Scan" },
+      { path: "/intelligence/morning", expectText: "Morning Briefing" },
+      { path: "/intelligence/evening", expectText: "Evening Briefing" },
       { path: "/pipeline", expectText: "Pipeline" },
       { path: "/calendar", expectText: "Calendar" },
       { path: "/settings", expectText: "Team Members" },

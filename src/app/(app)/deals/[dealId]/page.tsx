@@ -15,9 +15,13 @@ import {
 import { DealTasksList } from "@/components/deals/deal-tasks-list";
 import { DealEmailsList } from "@/components/deals/deal-emails-list";
 import { DealIntelligencePanel } from "@/components/deals/deal-intelligence-panel";
+import { DealIntelligenceOverviewPanel } from "@/components/deals/deal-intelligence-overview";
 import { dealRepository } from "@/lib/data";
 import { getBankingService } from "@/lib/data/fixtures/workflows";
 import { formatDate, formatEnumLabel, formatMoney } from "@/lib/format";
+import { getDealIntelligenceOverview } from "@/lib/intelligence/deal-overview";
+import { getPrismaClient } from "@/lib/db";
+import { DEMO_ORG_ID } from "@/lib/constants";
 
 export default async function DealDetailPage({
   params,
@@ -27,6 +31,7 @@ export default async function DealDetailPage({
   const { dealId } = await params;
   const deal = await dealRepository.get(dealId);
   if (!deal) notFound();
+  const overview = await getDealIntelligenceOverview(getPrismaClient(), dealId, DEMO_ORG_ID);
 
   return (
     <div className="pb-10">
@@ -78,6 +83,10 @@ export default async function DealDetailPage({
         <div className="mt-5">
           <StageProgress stages={deal.workflowStages} currentStageKey={deal.currentStageKey} />
         </div>
+      </div>
+
+      <div className="px-8 pt-6">
+        <DealIntelligenceOverviewPanel dealId={dealId} overview={overview} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 px-8 pt-6 xl:grid-cols-3">

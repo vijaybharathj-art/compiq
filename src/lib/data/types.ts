@@ -151,6 +151,7 @@ export interface NotificationView {
   title: string;
   body?: string;
   linkHref?: string;
+  priority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   readAt?: string;
   createdAt: string;
 }

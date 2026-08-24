@@ -37,6 +37,8 @@ model User {
   accounts          Account[]
   emailParticipants EmailParticipant[]
   triggeredScans    EmailProcessingJob[]
+  inactivityExceptionsCreated InactivityException[]
+  briefings         Briefing[]
 
   @@map("users")
 }
@@ -97,6 +99,8 @@ model Organization {
   auditLogs          AuditLog[]
   intelligenceEvents IntelligenceEvent[]
   emailProcessingJobs EmailProcessingJob[]
+  risks              Risk[]
+  briefings          Briefing[]
 
   @@map("organizations")
 }
@@ -295,6 +299,11 @@ model Deal {
   createdAt                 DateTime      @default(now())
   updatedAt                 DateTime      @updatedAt
   lastActivityAt            DateTime      @default(now())
+  // Distinct from lastActivityAt (bumped by any DB touch): only meaningful
+  // activity per spec §16 — client/buyer/seller email, meeting, stage
+  // change, task completion, material event. Drives the Inactivity Engine
+  // (src/lib/intelligence/inactivity.ts).
+  lastMeaningfulActivityAt  DateTime?
   nextMilestone             String?
   nextMilestoneDate         DateTime?
   expectedCloseDate         DateTime?
@@ -324,6 +333,9 @@ model Deal {
   aiExtractions      AiExtraction[]
   emailThreads       EmailThread[]
   intelligenceEvents IntelligenceEvent[]
+  risks                 Risk[]
+  valuationObservations DealValuationObservation[]
+  inactivityException   InactivityException?
 
   @@index([organizationId])
   @@index([clientId])
@@ -544,6 +556,8 @@ model Email {
   opportunities      Opportunity[]
   intelligenceEvents IntelligenceEvent[]
   processingLogs     EmailProcessingLog[]
+  risks                 Risk[]
+  valuationObservations DealValuationObservation[]
 
   @@unique([threadId, providerMessageId])
   @@index([threadId])
@@ -852,19 +866,31 @@ enum OpportunityStatus {
 // ---------------------------------------------------------------------------
 
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  type      String
-  title     String
-  body      String?
-  linkHref  String?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  id          String               @id @default(cuid())
+  userId      String
+  type        String
+  title       String
+  body        String?
+  linkHref    String?
+  priority    NotificationPriority @default(MEDIUM)
+  readAt      DateTime?
+  dismissedAt DateTime?
+  createdAt   DateTime             @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("notifications")
+}
+
+// Only CRITICAL/HIGH-importance intelligence events generate a
+// Notification row (spec §53-54) — see the gating logic in
+// src/lib/pipeline/intelligence-events.ts.
+enum NotificationPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
 }
 
 // The Intelligence Feed / dashboard "Today's Intelligence" are backed by
@@ -884,6 +910,9 @@ model IntelligenceEvent {
   deltaFrom         String?
   deltaTo           String?
   confidencePercent Int?
+  // 0-100, spec §5/§66 — see src/lib/intelligence/importance.ts for the
+  // documented, deterministic scoring logic (never computed by an AI call).
+  importanceScore   Int?
   sourceEmailId     String?
   aiExtractionId    String?
   processingJobId   String?
@@ -896,6 +925,7 @@ model IntelligenceEvent {
   client       Client?       @relation(fields: [clientId], references: [id])
   sourceEmail  Email?        @relation(fields: [sourceEmailId], references: [id])
   aiExtraction AiExtraction? @relation(fields: [aiExtractionId], references: [id])
+  risk         Risk?
 
   @@index([organizationId])
   @@index([dealId])
@@ -954,4 +984,150 @@ model AuditLog {
   @@index([organizationId])
   @@index([entityType, entityId])
   @@map("audit_logs")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Deal Intelligence (Risk Engine, Valuation history, Briefings)
+// ---------------------------------------------------------------------------
+
+// A dedicated, categorized risk record — distinct from IntelligenceEvent's
+// generic RISK_DETECTED entries, which stay as the feed-facing summary.
+// Every RISK_DETECTED intelligence event with a matched deal gets a Risk
+// row so severity/status/accumulation (spec §12-15) has somewhere durable
+// to live, independent of the feed's own review workflow.
+model Risk {
+  id              String         @id @default(cuid())
+  organizationId  String
+  dealId          String
+  riskType        RiskType
+  description     String         @db.Text
+  confidencePercent Int
+  severity        RiskSeverity
+  sourceEmailId   String?
+  intelligenceEventId String?    @unique
+  status          RiskItemStatus @default(OPEN)
+  resolutionNote  String?
+  detectedAt      DateTime
+  updatedAt       DateTime       @updatedAt
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deal               Deal               @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sourceEmail        Email?             @relation(fields: [sourceEmailId], references: [id])
+  intelligenceEvent  IntelligenceEvent? @relation(fields: [intelligenceEventId], references: [id])
+
+  @@index([organizationId])
+  @@index([dealId])
+  @@index([status])
+  @@map("risks")
+}
+
+enum RiskType {
+  CLIENT_SILENCE
+  BUYER_CONCERN
+  VALUATION_PRESSURE
+  TIMELINE_DELAY
+  FINANCING_UNCERTAINTY
+  DILIGENCE_ISSUE
+  COMPETITIVE_PRESSURE
+  MANAGEMENT_CONCERN
+  DEAL_STALL
+  UNRESPONSIVE_COUNTERPARTY
+  OTHER
+}
+
+enum RiskSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+// Named RiskItemStatus (not RiskStatus) to avoid colliding with Deal's
+// existing coarse ON_TRACK/WATCH/AT_RISK indicator.
+enum RiskItemStatus {
+  OPEN
+  ACKNOWLEDGED
+  DISMISSED
+  RESOLVED
+}
+
+// One row per material valuation observation (spec §22-25, §63) — the
+// change-detection stage writes one here every time it detects/applies a
+// DEAL_VALUE_CHANGED, in addition to updating Deal.enterpriseValueMinorUnits.
+model DealValuationObservation {
+  id              String                 @id @default(cuid())
+  dealId          String
+  valueMinorUnits BigInt
+  currency        String
+  observationType ValuationObservationType
+  source          String
+  sourceEmailId   String?
+  confidencePercent Int
+  observedAt      DateTime
+  createdAt       DateTime               @default(now())
+
+  deal        Deal   @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  sourceEmail Email? @relation(fields: [sourceEmailId], references: [id])
+
+  @@index([dealId])
+  @@map("deal_valuation_observations")
+}
+
+enum ValuationObservationType {
+  SELLER_EXPECTATION
+  BUYER_INDICATION
+  INDICATIVE_BID
+  FINAL_BID
+  AGREED_VALUE
+}
+
+// A banker-level "ignore inactivity" override (spec §50). One row per deal;
+// re-issuing replaces the previous exception (see risk-actions.ts).
+model InactivityException {
+  id            String    @id @default(cuid())
+  dealId        String    @unique
+  reason        String?
+  ignoredUntil  DateTime?
+  createdById   String?
+  createdAt     DateTime  @default(now())
+
+  deal      Deal  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  createdBy User? @relation(fields: [createdById], references: [id])
+
+  @@map("inactivity_exceptions")
+}
+
+// Generated, stored briefings (spec §7-11, §39-45, §78) — never regenerated
+// on read. sourceEventIds makes every material statement traceable back to
+// the IntelligenceEvent rows it was built from (spec §43).
+model Briefing {
+  id              String        @id @default(cuid())
+  organizationId  String
+  userId          String
+  type            BriefingType
+  date            DateTime      @db.Date
+  summary         Json
+  content         Json
+  sourceEventIds  String[]
+  generatedAt     DateTime      @default(now())
+  model           String
+  promptVersion   String
+  status          BriefingStatus @default(GENERATED)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId, type, date])
+  @@index([organizationId])
+  @@map("briefings")
+}
+
+enum BriefingType {
+  MORNING
+  EVENING
+}
+
+enum BriefingStatus {
+  GENERATED
+  FAILED
 }

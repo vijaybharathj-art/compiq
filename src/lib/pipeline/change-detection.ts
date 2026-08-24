@@ -31,6 +31,7 @@ export async function detectChanges(
         newValue: formatMoney(newValueBig, extraction.enterpriseValue?.currency ?? extraction.dealValue?.currency ?? deal.currency),
         confidencePercent: extraction.valueConfidencePercent ?? extraction.confidencePercent,
         applyValueMinorUnits: newValueBig,
+        previousValueMinorUnits: currentValue,
       });
     }
   }

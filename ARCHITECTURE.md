@@ -16,6 +16,7 @@
 | Drag-and-drop | `@dnd-kit/core` | Pipeline board (deal stage) and Task board (status) |
 | Validation | Zod | server action / route handler input validation; also validates every AI extraction (§3) |
 | Email intelligence | `src/lib/pipeline/` | modular pipeline, **live** against `DemoEmailProvider` — see `PHASE3_EMAIL_INTELLIGENCE.md` |
+| Deal intelligence | `src/lib/intelligence/` | Risk/Inactivity/Valuation/Deadline/Momentum/Briefing engines, **live** on top of the pipeline — see `PHASE4_DEAL_INTELLIGENCE.md` |
 | Testing | Vitest (unit + DB integration) + Playwright (`@playwright/test`, e2e smoke) | see §6 |
 
 ## 2. Decision log
@@ -120,6 +121,35 @@ decisions yourself and document them"):
     cycles the real stage-name list (`src/lib/pipeline/stages.ts`) as a
     loading indicator while the one request is in flight, then renders the
     exact counters the action returns — never a hardcoded number.
+16. **`importanceScore` is computed once, at write time, in the same
+    chokepoint (`createIntelligenceEvent()`) every pipeline stage and every
+    Phase 4 engine already calls** — not recomputed per read. Every
+    ranking surface (What Changed, briefings, notifications,
+    recommendations) sorts by this one persisted number instead of each
+    re-deriving its own priority order, so "what's most important" means
+    the same thing everywhere in the app. See `PHASE4_DEAL_INTELLIGENCE.md` §1.
+17. **A fixed narrative-time anchor (`DEMO_NOW`, `src/lib/constants.ts`)
+    stands in for `new Date()` everywhere Phase 4's date math runs** —
+    inactivity gaps, deadline urgency, momentum windows, briefing
+    generation. `prisma/seed.ts` anchors the whole seeded narrative to the
+    same fixed timestamp; using real wall-clock time instead would make
+    the demo read as increasingly stale the longer a deployment runs, and
+    would violate React's `react-hooks/purity` rule wherever the
+    computation happens inside a Server Component render body.
+18. **Deal Momentum and Deal Risk Score are two separate 0-100 numbers**,
+    never combined into one. Risk answers "how many concerning signals
+    exist"; momentum answers "how active/progressive does this deal
+    look" — a deal can be simultaneously high-momentum and moderately
+    risky (a live negotiation can be both fast-moving and contested).
+    Collapsing them into one score would hide that distinction from a
+    banker who needs both facts. Neither is ever labeled as a probability
+    of closing or failing.
+19. **Business-day math for inactivity, calendar-day math for deadlines**
+    — a deliberate distinction, not an inconsistency. A deadline is a date
+    a counterparty actually gave (calendar time is what matters); an
+    inactivity gap is an estimate of "how long has this gone untouched"
+    (weekends shouldn't make a deal look more stale than it is). See
+    `PHASE4_DEAL_INTELLIGENCE.md` §4 and §7.
 
 ## 3. Provider abstractions
 
@@ -159,6 +189,7 @@ interface AIProvider {
   classifyRelevance(email: EmailInput, context: ClassificationContext): Promise<RelevanceResult>
   extractEntities(email: EmailInput, context: DealContext): Promise<ExtractionResult>
   matchDeal(extraction: ExtractionResult, candidates: DealCandidate[]): Promise<DealMatchResult>
+  summarizeBriefing(facts: BriefingFacts): Promise<BriefingNarrativeResult> // Phase 4
 }
 ```
 
@@ -175,7 +206,12 @@ is validated against `ExtractionResultSchema` (Zod,
 Swapping `AnthropicProvider`/`OpenAIProvider` in for real extraction
 changes zero pipeline or UI code — the Intelligence Feed already reads
 `IntelligenceEvent` rows with
-the identical shape either path produces.
+the identical shape either path produces. `summarizeBriefing()`
+(Phase 4 — `PHASE4_DEAL_INTELLIGENCE.md` §0/§12) is given an
+already-assembled `BriefingFacts` object (numbers and headlines, no
+prose) and returns only narrative text — it never supplies a number that
+ends up rendered directly, so swapping in a real LLM for narration can
+never change what a briefing's numbers say, only how they're phrased.
 
 ## 4. Directory layout
 
@@ -192,9 +228,11 @@ src/
       dashboard/
       deals/[dealId]/
       clients/[clientId]/
-      intelligence/         # feed
+      intelligence/         # What Changed? (rewritten, Phase 4)
       intelligence/review/   # AI Review Center (Phase 3)
       intelligence/scan/     # Run Scan + scan history + Email Activity (Phase 3)
+      intelligence/morning/   # Morning Briefing (Phase 4)
+      intelligence/evening/   # Evening Briefing (Phase 4)
       tasks/
       pipeline/
       calendar/
@@ -212,10 +250,12 @@ src/
                              # + demo-repository.ts (fixtures — seed source, not active)
     actions/mutations.ts    # Server Actions: stage/status/notification/review mutations + audit log
     actions/pipeline-actions.ts # Server Actions: triggerEmailScan, accept/rejectExtraction (Phase 3)
+    actions/intelligence-actions.ts # Server Actions: risk ack/dismiss/resolve, inactivity ignore, briefings (Phase 4)
     ai/                     # AIProvider interface, extraction-schema.ts (Zod), extractors.ts (pure
                              # helpers), confidence-policy.ts, prompts/, Demo/Anthropic/OpenAI impls
     email/                  # EmailProvider interface + Demo (live) / Gmail / MicrosoftGraph impls
     pipeline/                # the Phase 3 pipeline — see PHASE3_EMAIL_INTELLIGENCE.md §1
+    intelligence/            # the Phase 4 Deal Intelligence layer — see PHASE4_DEAL_INTELLIGENCE.md
     auth/                   # Auth.js config (config.ts), Server Actions (actions.ts)
     search.ts search-query.ts  # DB-backed search + its pure query parser
     insights.ts             # client relationship-intelligence bullet computation

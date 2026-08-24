@@ -99,23 +99,32 @@ function curatedEmails(now: Date, deals: {
       bodyText: `Buyer: Lockwood Capital has confirmed continued interest and will submit an indicative offer by next Friday. They also asked about management availability.`,
       receivedAt: mins(60 * 8),
     });
-  }
-
-  if (deals.atlas) {
-    const d = deals.atlas;
     emails.push({
       threadId: threadIdFor(d.id),
       fromName: "Robert Hayes",
       fromAddress: "robert.hayes@acmeindustries.example",
       toAddress: bharath?.email ?? "bharath.vijay@tattava-demo.bank",
-      subject: "Re: Atlas Notes Pricing",
-      bodyText: `Early feedback from the syndicate suggests we think a $520M size could be achievable for Project Atlas, though nothing is confirmed yet and rates remain volatile.`,
-      receivedAt: mins(60 * 30),
+      subject: "Project Falcon — Final Bid Deadline",
+      bodyText: `Reminder: the final bid deadline for Project Falcon is tomorrow. We need the updated bid instructions letter to buyers by end of day.`,
+      receivedAt: mins(60 * 4),
     });
   }
 
+  // Atlas deliberately receives NO backlog email — it's the seeded
+  // Inactivity Engine demo scenario (PHASE4_DEAL_INTELLIGENCE.md §73/§75):
+  // Run Scan must not touch it, so it still reads INACTIVE afterward.
+
   if (deals.orion) {
     const d = deals.orion;
+    emails.push({
+      threadId: threadIdFor(d.id),
+      fromName: "Cascade Health Partners",
+      fromAddress: "deals@cascadehealthpartners.example",
+      toAddress: bharath?.email ?? "bharath.vijay@tattava-demo.bank",
+      subject: "Re: Project Orion — Indicative Offer",
+      bodyText: `Following management meetings, we're pleased to submit an indicative offer of $420M enterprise value for Project Orion, up from our earlier range.`,
+      receivedAt: mins(60 * 6),
+    });
     emails.push({
       threadId: threadIdFor(d.id),
       fromName: "Dana Whitcombe",
@@ -255,11 +264,14 @@ export function buildBacklogEmails(
   }
 
   // Relevant deal-thread continuations across many deals — risk/timeline
-  // signals, task requests, role mentions, internal-banker chatter.
+  // signals, task requests, role mentions, internal-banker chatter. Atlas
+  // is excluded here too (not just from curatedEmails) so the bulk loops
+  // below don't undo the Inactivity Engine demo scenario by touching it.
   const contactEmailFor = (d: DealRef) => `contact@${slug(d.clientName)}.example`;
+  const bulkDeals = allDeals.filter((d) => d.id !== atlasId);
 
   for (let i = 0; i < 25; i++) {
-    const d = allDeals[i % allDeals.length];
+    const d = bulkDeals[i % bulkDeals.length];
     const body = pick(rng, RELEVANT_UPDATE_BODIES(d.projectCodename, "current stage"));
     push({
       threadId: threadIdFor(d.id),
@@ -273,7 +285,7 @@ export function buildBacklogEmails(
   }
 
   for (let i = 0; i < 15; i++) {
-    const d = allDeals[(i + 3) % allDeals.length];
+    const d = bulkDeals[(i + 3) % bulkDeals.length];
     const body = pick(rng, TASK_REQUEST_BODIES(d.projectCodename));
     push({
       threadId: threadIdFor(d.id),
@@ -287,7 +299,7 @@ export function buildBacklogEmails(
   }
 
   for (let i = 0; i < 10; i++) {
-    const d = allDeals[(i + 7) % allDeals.length];
+    const d = bulkDeals[(i + 7) % bulkDeals.length];
     const roleFn = pick(rng, ROLE_MENTION_BODIES(d.projectCodename));
     push({
       threadId: threadIdFor(d.id),
@@ -301,7 +313,7 @@ export function buildBacklogEmails(
   }
 
   for (let i = 0; i < 15; i++) {
-    const d = allDeals[(i + 11) % allDeals.length];
+    const d = bulkDeals[(i + 11) % bulkDeals.length];
     const sender = bankers[(i + 2) % bankers.length];
     const body = pick(rng, INTERNAL_BANKER_BODIES(d.projectCodename, "current stage"));
     push({

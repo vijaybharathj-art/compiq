@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getPrismaClient } from "@/lib/db";
 import { auth } from "@/lib/auth/config";
 import { DEMO_ORG_ID } from "@/lib/constants";
+import { touchMeaningfulActivity } from "@/lib/intelligence/inactivity";
 
 const prisma = getPrismaClient();
 
@@ -45,6 +46,15 @@ export async function markAllNotificationsRead() {
   await prisma.notification.updateMany({
     where: { userId, readAt: null },
     data: { readAt: new Date() },
+  });
+  revalidatePath("/", "layout");
+}
+
+export async function dismissNotification(notificationId: string) {
+  const userId = await requireUserId();
+  await prisma.notification.updateMany({
+    where: { id: notificationId, userId },
+    data: { dismissedAt: new Date(), readAt: new Date() },
   });
   revalidatePath("/", "layout");
 }
@@ -148,6 +158,10 @@ export async function updateTaskStatus(taskId: string, newStatus: TaskStatusValu
     taskId,
     { from: task.status, to: newStatus },
   );
+
+  if (newStatus === "COMPLETED" && task.dealId) {
+    await touchMeaningfulActivity(prisma, task.dealId, new Date());
+  }
 
   revalidatePath("/tasks");
   revalidatePath("/dashboard");

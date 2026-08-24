@@ -7,9 +7,9 @@ origination opportunities.
 
 Start with `CLAUDE.md` — it maps the rest of the documentation
 (`PRODUCT_SPEC.md`, `ARCHITECTURE.md`, `DATABASE_SCHEMA.md`,
-`AI_EXTRACTION_SPEC.md`, `PHASE3_EMAIL_INTELLIGENCE.md`, `SECURITY.md`,
-`DESIGN_SYSTEM.md`), which together are the persistent source of truth for
-this project.
+`AI_EXTRACTION_SPEC.md`, `PHASE3_EMAIL_INTELLIGENCE.md`,
+`PHASE4_DEAL_INTELLIGENCE.md`, `SECURITY.md`, `DESIGN_SYSTEM.md`), which
+together are the persistent source of truth for this project.
 
 ## Running locally
 
@@ -26,13 +26,23 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000) and "continue as" any
 seeded banker — this is a demo Credentials login, not a real password (see
 `SECURITY.md` §1). The database is the live runtime: 10 clients, 20
-companies, 25 deals, 202 emails (112 pre-processed history + a ~90-email
+companies, 25 deals, 203 emails (112 pre-processed history + a ~91-email
 unprocessed backlog), tasks, and intelligence events. Click **Run Scan**
 (Intelligence → Scan) to watch the real email intelligence pipeline process
 that backlog — classification, extraction, deal matching, change detection,
 and task/risk/opportunity generation all genuinely execute (see
 `PHASE3_EMAIL_INTELLIGENCE.md`). Re-running the seed script resets
 everything, including the scan backlog, to a pristine state.
+
+**What Changed?** (Intelligence, the default tab) is the primary
+intelligence view — a prioritized, database-driven feed ranked by a
+documented 0–100 importance score, not a raw email list. **Morning
+Briefing**/**Evening Briefing** generate a stored, evidence-traceable
+summary from real deal events (button-triggered — no scheduler yet). The
+Dashboard's Risks and Deadlines cards, each Deal's Intelligence panel
+(momentum, risk, inactivity, valuation history, recommendations), and each
+Client's Attention card are all backed by the same engines (see
+`PHASE4_DEAL_INTELLIGENCE.md`).
 
 ## Stack
 
@@ -41,6 +51,8 @@ Next.js 16 (App Router, TypeScript, Turbopack) · Tailwind CSS v4 · shadcn/ui
 Google + Microsoft Entra ID OAuth planned) · `@dnd-kit/core` ·
 `EmailProvider`/`AIProvider` abstractions (`DemoEmailProvider`/
 `DemoAIProvider` live; Gmail, Microsoft Graph, Anthropic, OpenAI planned) ·
+a deterministic Deal Intelligence layer (importance scoring, Risk/
+Inactivity/Valuation/Deadline/Momentum engines, stored briefings) ·
 Recharts · Framer Motion.
 
 ## Checks

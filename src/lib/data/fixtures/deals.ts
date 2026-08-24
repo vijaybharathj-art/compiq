@@ -71,7 +71,11 @@ export const deals: Deal[] = [
       { id: "p-atlas-2", companyName: "Colville LLP", role: "LAW_FIRM" },
     ],
     createdAt: "2026-06-10T09:00:00Z",
-    lastActivityAt: "2026-08-19T11:25:00Z",
+    // Deliberately stale relative to DEMO_NOW (2026-08-23T18:00Z) — Atlas is
+    // the seeded Inactivity Engine demo scenario (PHASE4_DEAL_INTELLIGENCE.md
+    // §73): ~9 business days since last meaningful activity while in a late
+    // DCM stage (documentation), landing it in INACTIVE.
+    lastActivityAt: "2026-08-10T11:25:00Z",
     nextMilestone: "Circulate preliminary offering memorandum",
     nextMilestoneDate: "2026-08-29T00:00:00Z",
     expectedCloseDate: "2026-10-15",
@@ -89,8 +93,12 @@ export const deals: Deal[] = [
     bankingServiceId: "MA",
     dealType: "DIVESTITURE",
     side: "SELL_SIDE",
-    value: usd(420_000_000_00),
-    enterpriseValue: usd(420_000_000_00),
+    // Deliberately below the backlog's indicative-offer figure ($420M) —
+    // Orion is the seeded Valuation Intelligence demo scenario
+    // (PHASE4_DEAL_INTELLIGENCE.md §22-25, §72 Test 2): $390M → $420M
+    // (+$30M, +7.69%) should be reachable by running a scan.
+    value: usd(390_000_000_00),
+    enterpriseValue: usd(390_000_000_00),
     workflowStages: workflowsByService.MA,
     currentStageKey: "due_diligence",
     previousStageKey: "management_meetings",

@@ -111,53 +111,6 @@ export async function getPendingEmailCount(organizationId: string): Promise<numb
   return db.email.count({ where: { thread: { emailAccountId: account.id }, processingStatus: "PENDING" } });
 }
 
-export interface SinceLastScanStats {
-  dealsChanged: number;
-  actionsRequired: number;
-  opportunities: number;
-  risks: number;
-  windowStart: string;
-  topEvents: { id: string; headline: string; confidencePercent: number | null; occurredAt: string }[];
-}
-
-export async function getSinceLastScan(organizationId: string): Promise<SinceLastScanStats> {
-  const lastJob = await db.emailProcessingJob.findFirst({
-    where: { organizationId, status: "COMPLETED" },
-    orderBy: { finishedAt: "desc" },
-  });
-  const windowStart = lastJob?.finishedAt ?? new Date(Date.now() - 1000 * 60 * 60 * 24);
-
-  const [dealsChanged, actionsRequired, opportunities, risks, topEvents] = await Promise.all([
-    db.intelligenceEvent.count({
-      where: { organizationId, category: "DEAL_CHANGE", occurredAt: { gte: windowStart } },
-    }),
-    db.task.count({ where: { organizationId, createdAt: { gte: windowStart }, status: "TODO" } }),
-    db.intelligenceEvent.count({
-      where: { organizationId, category: "OPPORTUNITY", occurredAt: { gte: windowStart } },
-    }),
-    db.intelligenceEvent.count({ where: { organizationId, category: "RISK", occurredAt: { gte: windowStart } } }),
-    db.intelligenceEvent.findMany({
-      where: { organizationId, occurredAt: { gte: windowStart } },
-      orderBy: { confidencePercent: "desc" },
-      take: 5,
-    }),
-  ]);
-
-  return {
-    dealsChanged,
-    actionsRequired,
-    opportunities,
-    risks,
-    windowStart: windowStart.toISOString(),
-    topEvents: topEvents.map((e) => ({
-      id: e.id,
-      headline: e.headline,
-      confidencePercent: e.confidencePercent,
-      occurredAt: e.occurredAt.toISOString(),
-    })),
-  };
-}
-
 export interface ProcessedEmailSummary {
   id: string;
   subject: string;

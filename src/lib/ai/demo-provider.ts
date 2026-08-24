@@ -1,5 +1,7 @@
 import type {
   AIProvider,
+  BriefingFacts,
+  BriefingNarrativeResult,
   ClassificationContext,
   DealCandidate,
   DealContext,
@@ -11,6 +13,7 @@ import { parseExtractionResult, parseRelevanceResult } from "./extraction-schema
 import { CLASSIFICATION_PROMPT_V1 } from "./prompts/classification";
 import { EXTRACTION_PROMPT_V1 } from "./prompts/extraction";
 import { DEAL_MATCHING_PROMPT_V1 } from "./prompts/deal-matching";
+import { BRIEFING_SUMMARY_PROMPT_V1 } from "./prompts/briefing";
 import {
   detectMeetings,
   detectMoneySignal,
@@ -257,5 +260,42 @@ export class DemoAIProvider implements AIProvider {
       reason: "Insufficient signal to resolve a client or deal",
       promptVersion: DEAL_MATCHING_PROMPT_V1,
     };
+  }
+
+  // Deliberately a template over the structured facts, not a generative
+  // call — every sentence is assembled from fields already in
+  // BriefingFacts, so there is zero opportunity to invent a number or a
+  // development the database doesn't contain (spec §44-45). A real
+  // AnthropicProvider/OpenAIProvider would receive the identical
+  // BriefingFacts object under BRIEFING_SUMMARY_SYSTEM_PROMPT and must
+  // honor the same "never invent, never recompute" constraint.
+  async summarizeBriefing(facts: BriefingFacts): Promise<BriefingNarrativeResult> {
+    const sentences: string[] = [];
+
+    sentences.push(
+      `${facts.summary.dealsChanged} deal${facts.summary.dealsChanged === 1 ? "" : "s"} changed since your last briefing` +
+        (facts.summary.dealsAdvanced > 0 ? `, with ${facts.summary.dealsAdvanced} advancing` : "") +
+        ".",
+    );
+
+    if (facts.priorities.length > 0) {
+      sentences.push(`Top priority: ${facts.priorities[0]!.headline}`);
+    }
+
+    if (facts.risks.length > 0) {
+      sentences.push(
+        `${facts.risks.length} potential risk${facts.risks.length === 1 ? "" : "s"} detected` +
+          (facts.risks[0]?.dealCodename ? `, including ${facts.risks[0]!.dealCodename}` : "") +
+          ".",
+      );
+    }
+
+    if (facts.opportunities.length > 0) {
+      sentences.push(
+        `${facts.opportunities.length} new opportunity signal${facts.opportunities.length === 1 ? "" : "s"} detected.`,
+      );
+    }
+
+    return { narrative: sentences.join(" "), promptVersion: BRIEFING_SUMMARY_PROMPT_V1 };
   }
 }

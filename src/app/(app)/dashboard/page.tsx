@@ -12,6 +12,8 @@ import { MorningBriefing } from "@/components/dashboard/morning-briefing";
 import { ActionRequiredCard } from "@/components/dashboard/action-required";
 import { NewOpportunitiesCard } from "@/components/dashboard/new-opportunities";
 import { SinceLastScanCard } from "@/components/dashboard/since-last-scan";
+import { RisksCard } from "@/components/dashboard/risks-card";
+import { DeadlinesCard } from "@/components/dashboard/deadlines-card";
 import { IntelligenceFeedItem } from "@/components/intelligence/feed-item";
 import { Card, CardHeader, CardTitle, CardAction } from "@/components/ui/card";
 import { dashboardRepository } from "@/lib/data";
@@ -90,6 +92,8 @@ export default async function DashboardPage() {
 
         <div className="flex flex-col gap-4">
           <ActionRequiredCard tasks={data.actionRequired} />
+          <DeadlinesCard />
+          <RisksCard />
           <NewOpportunitiesCard opportunities={data.newOpportunities} />
         </div>
       </div>

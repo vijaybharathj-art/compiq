@@ -10,6 +10,8 @@ import { applyDealChanges } from "./suggestions";
 import { generateMeetings, generateOpportunity, generateRiskEvents, generateTasks } from "./generation";
 import { emptyScanCounters, type ScanCounters } from "./types";
 import { PIPELINE_STAGES } from "./stages";
+import { runInactivityScan } from "@/lib/intelligence/inactivity";
+import { runDeadlineScan } from "@/lib/intelligence/deadline";
 
 // The orchestrator (spec §26/§32/§34). Ties every pipeline stage together
 // per email inside one EmailProcessingJob. Deliberately sequential — a
@@ -201,6 +203,17 @@ export async function runScan(organizationId: string, triggeredById?: string): P
     await setStage(db, job.id, PIPELINE_STAGES[4]);
     await sleep(STAGE_PACING_MS);
     await setStage(db, job.id, PIPELINE_STAGES[5]);
+
+    // Deal Intelligence passes (Phase 4) — org-wide, not per-email, so they
+    // run once at the end of the scan rather than inside processSingleEmail.
+    // Kept out of counters.risksDetected on purpose: inactivity is never
+    // auto-classified as risk (spec §59) — DEAL_INACTIVE events are their
+    // own event type, surfaced separately in the scan summary UI.
+    const inactivityResult = await runInactivityScan(organizationId);
+    await log(db, job.id, "inactivity-scan", "info", `${inactivityResult.createdCount} deal(s) newly flagged inactive`);
+    const deadlineResult = await runDeadlineScan(organizationId);
+    await log(db, job.id, "deadline-scan", "info", `${deadlineResult.escalatedCount} overdue task(s) escalated`);
+
     await sleep(STAGE_PACING_MS);
 
     await db.emailProcessingJob.update({

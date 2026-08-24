@@ -632,7 +632,7 @@ export const prismaReferenceRepository: ReferenceRepository = {
 export const prismaNotificationRepository: NotificationRepository = {
   async listForUser(userId: string) {
     const rows = await db.notification.findMany({
-      where: { userId },
+      where: { userId, dismissedAt: null },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
@@ -641,6 +641,7 @@ export const prismaNotificationRepository: NotificationRepository = {
       title: r.title,
       body: r.body ?? undefined,
       linkHref: r.linkHref ?? undefined,
+      priority: r.priority,
       readAt: r.readAt?.toISOString(),
       createdAt: r.createdAt.toISOString(),
     }));

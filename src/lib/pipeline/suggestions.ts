@@ -4,6 +4,9 @@ import type { DealMatchDecision } from "./matching";
 import { decideConfidenceAction, getConfidencePolicy } from "@/lib/ai/confidence-policy";
 import { detectChanges } from "./change-detection";
 import { createIntelligenceEvent } from "./intelligence-events";
+import { touchMeaningfulActivity } from "@/lib/intelligence/inactivity";
+import { recordValuationObservation, computeValuationChange, formatPercentChange } from "@/lib/intelligence/valuation";
+import { explainStageChange } from "@/lib/intelligence/stage";
 import type { DetectedChange, ScanCounters } from "./types";
 
 // AI suggestion / auto-update + evidence storage + deal timeline stages
@@ -69,6 +72,9 @@ export async function applyDealChanges(
       params.extraction.confidencePercent,
       "INFO_ONLY",
     );
+    // Substantive correspondence about a matched deal is itself meaningful
+    // activity even without a detected field change (spec §16).
+    await touchMeaningfulActivity(db, params.dealId, params.occurredAt);
     return;
   }
 
@@ -92,12 +98,27 @@ export async function applyDealChanges(
       counters.suggestionsForReview += 1;
     }
 
+    let detail = `${change.previousValue} → ${change.newValue}`;
+    if (change.type === "DEAL_VALUE_CHANGED" && change.applyValueMinorUnits !== undefined) {
+      const { percentChange } = computeValuationChange(change.previousValueMinorUnits ?? null, change.applyValueMinorUnits);
+      detail = `${change.previousValue} → ${change.newValue} (${formatPercentChange(percentChange)})`;
+    }
+    if (change.type === "STAGE_CHANGED" && change.applyStageId) {
+      const [dealMeta, newStage] = await Promise.all([
+        db.deal.findUnique({ where: { id: params.dealId }, select: { projectCodename: true } }),
+        db.dealStageDefinition.findUnique({ where: { id: change.applyStageId }, select: { key: true, label: true } }),
+      ]);
+      if (dealMeta && newStage) {
+        detail = explainStageChange(dealMeta.projectCodename, change.previousValue, newStage);
+      }
+    }
+
     await createIntelligenceEvent(db, {
       organizationId: params.organizationId,
       eventType: change.type,
       dealId: params.dealId,
       headline: changeHeadline(change.type, decision),
-      detail: `${change.previousValue} → ${change.newValue}`,
+      detail,
       deltaFrom: change.previousValue,
       deltaTo: change.newValue,
       confidencePercent: change.confidencePercent,
@@ -131,9 +152,20 @@ export async function applyChangeToDeal(
   note: string = "Auto-applied by the email intelligence pipeline.",
 ): Promise<void> {
   if (change.type === "DEAL_VALUE_CHANGED" && change.applyValueMinorUnits !== undefined) {
+    const deal = await db.deal.findUniqueOrThrow({ where: { id: dealId }, select: { currency: true } });
     await db.deal.update({
       where: { id: dealId },
       data: { enterpriseValueMinorUnits: change.applyValueMinorUnits, lastActivityAt: new Date() },
+    });
+    await recordValuationObservation(db, {
+      dealId,
+      valueMinorUnits: change.applyValueMinorUnits,
+      currency: deal.currency,
+      observationType: "BUYER_INDICATION",
+      source: "Email-derived valuation update",
+      sourceEmailId,
+      confidencePercent: Math.round(change.confidencePercent),
+      observedAt: occurredAt,
     });
   }
   if (change.type === "STAGE_CHANGED" && change.applyStageId) {
@@ -143,6 +175,7 @@ export async function applyChangeToDeal(
       data: { previousStageId: deal.currentStageId, currentStageId: change.applyStageId, lastActivityAt: new Date() },
     });
   }
+  await touchMeaningfulActivity(db, dealId, occurredAt);
 
   await db.dealEvent.create({
     data: {

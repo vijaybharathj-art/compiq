@@ -1,5 +1,7 @@
 import type {
   AIProvider,
+  BriefingFacts,
+  BriefingNarrativeResult,
   ClassificationContext,
   DealCandidate,
   DealContext,
@@ -36,6 +38,12 @@ export class AnthropicProvider implements AIProvider {
   ): Promise<DealMatchResult> {
     throw new Error(
       `AnthropicProvider.matchDeal is a planned integration (${candidates.length} candidate deals, extraction confidence=${extraction.confidencePercent}%).`,
+    );
+  }
+
+  async summarizeBriefing(facts: BriefingFacts): Promise<BriefingNarrativeResult> {
+    throw new Error(
+      `AnthropicProvider.summarizeBriefing is a planned integration (${facts.summary.dealsChanged} deals changed).`,
     );
   }
 }

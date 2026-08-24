@@ -10,9 +10,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Badge } from "@/components/ui/badge";
 import { notificationRepository } from "@/lib/data";
-import { markAllNotificationsRead, markNotificationRead } from "@/lib/actions/mutations";
+import { markAllNotificationsRead, markNotificationRead, dismissNotification } from "@/lib/actions/mutations";
 import { relativeTimeFromNow } from "@/lib/format";
+import { DEMO_NOW } from "@/lib/constants";
+
+const PRIORITY_VARIANT = { CRITICAL: "negative", HIGH: "warning", MEDIUM: "default", LOW: "outline" } as const;
 
 export async function NotificationsMenu({ userId }: { userId: string }) {
   const notifications = await notificationRepository.listForUser(userId);
@@ -55,24 +59,40 @@ export async function NotificationsMenu({ userId }: { userId: string }) {
                     <div className="flex w-full items-center gap-2">
                       {!n.readAt && <span className="size-1.5 shrink-0 rounded-full bg-accent" />}
                       <span className="truncate text-sm font-medium text-foreground">{n.title}</span>
+                      {(n.priority === "CRITICAL" || n.priority === "HIGH") && (
+                        <Badge variant={PRIORITY_VARIANT[n.priority]} className="shrink-0">
+                          {n.priority}
+                        </Badge>
+                      )}
                     </div>
                     {n.body && <p className="text-xs text-muted-foreground">{n.body}</p>}
                     <span className="text-[10px] text-muted-foreground">
-                      {relativeTimeFromNow(n.createdAt, new Date("2026-08-23T18:00:00Z"))}
+                      {relativeTimeFromNow(n.createdAt, DEMO_NOW)}
                     </span>
                   </Link>
                 </DropdownMenuItem>
-                {!n.readAt && (
-                  <form action={markNotificationRead.bind(null, n.id)} className="pt-2 pr-1">
+                <div className="flex flex-col gap-1 pt-2 pr-1">
+                  {!n.readAt && (
+                    <form action={markNotificationRead.bind(null, n.id)}>
+                      <button
+                        type="submit"
+                        className="text-[10px] text-muted-foreground hover:text-accent"
+                        title="Mark as read"
+                      >
+                        Read
+                      </button>
+                    </form>
+                  )}
+                  <form action={dismissNotification.bind(null, n.id)}>
                     <button
                       type="submit"
-                      className="text-[10px] text-muted-foreground hover:text-accent"
-                      title="Mark as read"
+                      className="text-[10px] text-muted-foreground hover:text-negative"
+                      title="Dismiss"
                     >
-                      Read
+                      Dismiss
                     </button>
                   </form>
-                )}
+                </div>
               </div>
             ))}
           </div>

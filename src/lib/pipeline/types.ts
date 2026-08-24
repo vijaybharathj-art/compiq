@@ -17,6 +17,8 @@ export interface DetectedChange {
   applyStageId?: string;
   /** For DEAL_VALUE_CHANGED, the resolved minor-units value to apply. */
   applyValueMinorUnits?: bigint;
+  /** For DEAL_VALUE_CHANGED, the prior raw value (null if previously unset) — used for percent-change display. */
+  previousValueMinorUnits?: bigint | null;
 }
 
 export interface ScanCounters {
