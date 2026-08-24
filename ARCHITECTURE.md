@@ -220,6 +220,41 @@ decisions yourself and document them"):
     the problem permanently rather than for one deployment. `migrate
     deploy` is safe to run on every build: it only applies pending
     migrations and no-ops cleanly if the schema is already current.
+28. **Automatic incremental sync is a Vercel Cron hitting a
+    bearer-token-authenticated route, not a persistent background
+    worker** (`vercel.json` → `/api/cron/email-sync`, hourly by default —
+    `src/lib/email/scheduler.ts`'s `runScheduledSyncs()` calls
+    `runAccountSync()` unchanged, same as any other trigger). Chosen
+    because Vercel's serverless model has no long-running process to host
+    a real scheduler in; Cron is the platform-native equivalent. Hourly
+    (not the tighter 15-30 minute cadence a live-mail product would
+    eventually want) was picked as a conservative default safe on
+    Vercel's Hobby tier, since this environment has no way to verify
+    Vercel's current exact cron-frequency limits by plan — `.env.example`
+    documents `EMAIL_SYNC_INTERVAL_MINUTES` as the separate, independent
+    "don't resync an account more often than this" floor the scheduler
+    itself enforces, so tightening `vercel.json`'s schedule later is safe
+    without any code change. See `PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md`.
+29. **A failed message is retried, capped, not retried forever, and not
+    silently skipped** — `Email.processingAttempts` (Phase 5B) is the
+    signal, distinct from the dedup check (does this `Email` row exist at
+    all). Before this field existed, `PROCESSING_FAILED` and "already
+    ingested" were the same state as far as the sync loop could tell, so
+    a message that failed extraction once could never be retried by a
+    later sync. `MAX_PROCESSING_ATTEMPTS = 3`
+    (`src/lib/email/sync-engine.ts`) bounds the retry so a message that
+    will never succeed doesn't get attempted on every sync indefinitely.
+30. **Sync job `displayId` generation retries past a unique-constraint
+    error instead of trusting a count-then-create sequence** — the
+    scheduler's own bounded concurrency (up to 3 accounts syncing via
+    `Promise.all`) made the old "count existing jobs, create with
+    count+1" pattern's TOCTOU race genuinely reachable for the first
+    time (it was never wrong in isolation; nothing before Phase 5B ever
+    ran two `runAccountSync()` calls concurrently). `createSyncJob()`
+    catches Prisma's `P2002` and recomputes the id, up to
+    `MAX_DISPLAY_ID_RETRIES = 5`, rather than adding a lock or switching
+    the id scheme — the smallest fix that makes concurrent job creation
+    correct without touching the id format anything else depends on.
 
 ## 3. Provider abstractions
 

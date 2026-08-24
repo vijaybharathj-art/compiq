@@ -9,6 +9,7 @@ Start with `CLAUDE.md` — it maps the rest of the documentation
 (`PRODUCT_SPEC.md`, `ARCHITECTURE.md`, `DATABASE_SCHEMA.md`,
 `AI_EXTRACTION_SPEC.md`, `PHASE3_EMAIL_INTELLIGENCE.md`,
 `PHASE4_DEAL_INTELLIGENCE.md`, `PHASE4_5_PRODUCTION_HARDENING.md`,
+`PHASE5_REAL_EMAIL_INTEGRATION.md`, `PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md`,
 `SECURITY.md`, `DESIGN_SYSTEM.md`), which together are the persistent
 source of truth for this project.
 
@@ -74,6 +75,17 @@ one Server Action — see `PHASE3_EMAIL_INTELLIGENCE.md` §1/§8), and the
 database is external PostgreSQL reached only through `DATABASE_URL`. See
 `.env.example` for every environment variable a deployment needs; never
 commit `.env`. Connect the repository in the Vercel dashboard, set the
-environment variables there, and run the migrate + seed commands above
-against the production database before first use (see `DATABASE_SCHEMA.md`
-"Reproducing the database").
+environment variables there — **do not mark `DATABASE_URL` "Sensitive"**,
+which makes it permanently unretrievable even to you (see `ARCHITECTURE.md`
+item #27) — and seed the production database once before first use (see
+`DATABASE_SCHEMA.md` "Reproducing the database"); migrations apply
+automatically on every build (`package.json`'s `build` script runs
+`prisma migrate deploy` first).
+
+`vercel.json` also declares an hourly Vercel Cron job
+(`/api/cron/email-sync`) that automatically syncs every connected real
+mailbox — set `CRON_SECRET` (any high-entropy random string) for it to
+run at all; it refuses to run unauthenticated. See
+`PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md` §6 for the exact Google Cloud
+Console / Vercel configuration steps used against this project's own
+deployment.

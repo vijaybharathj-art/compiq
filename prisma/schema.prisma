@@ -573,6 +573,16 @@ model Email {
   processedAt       DateTime?
   processingJobId   String?
   createdAt         DateTime            @default(now())
+  /**
+   * Phase 5B (PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md §31) — how many times
+   * the real sync engine has attempted this email. A PROCESSING_FAILED row
+   * is eligible for retry on the next sync (dedup alone would otherwise
+   * skip it forever, since its Email row already exists) up to
+   * MAX_PROCESSING_ATTEMPTS in src/lib/email/sync-engine.ts, after which
+   * it's left failed rather than retried indefinitely against a message
+   * that will never succeed.
+   */
+  processingAttempts Int                @default(0)
 
   thread             EmailThread          @relation(fields: [threadId], references: [id], onDelete: Cascade)
   processingJob      EmailProcessingJob?  @relation(fields: [processingJobId], references: [id])

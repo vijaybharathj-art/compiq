@@ -29,6 +29,13 @@ import { runDeadlineScan } from "@/lib/intelligence/deadline";
 // (spec §77).
 const MAX_PAGES_PER_INVOCATION = 5;
 const DEFAULT_PAGE_SIZE = 25;
+// PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md §31 — a PROCESSING_FAILED email is
+// retried on the next sync (its Email row already exists, so dedup alone
+// would otherwise skip it forever), but only up to this many attempts —
+// past that, a message that will never succeed stops being retried
+// indefinitely (spec Part 21's "no runaway retry" applied at the
+// per-message level, not just per-account auth failures).
+const MAX_PROCESSING_ATTEMPTS = 3;
 
 export class SyncAlreadyRunningError extends Error {
   constructor() {
@@ -49,12 +56,50 @@ export interface RunAccountSyncResult {
   messagesFailed: number;
 }
 
-async function nextSyncDisplayId(db: PrismaClient): Promise<string> {
+function isUniqueConstraintError(err: unknown): boolean {
+  return typeof err === "object" && err !== null && "code" in err && (err as { code?: unknown }).code === "P2002";
+}
+
+const MAX_DISPLAY_ID_RETRIES = 5;
+
+/**
+ * Creates the EmailProcessingJob row for one sync, with a human-readable
+ * `SYNC-YYYYMMDD-NNN` displayId derived by counting today's existing jobs.
+ * That count-then-create is a real TOCTOU race the moment more than one
+ * sync can run at once — which the scheduler's bounded concurrency
+ * (src/lib/email/scheduler.ts, up to MAX_CONCURRENT_ACCOUNT_SYNCS accounts
+ * syncing in parallel) made genuinely reachable, not just theoretical.
+ * Retrying past the unique constraint (Postgres P2002) rather than
+ * widening the race window with a lock keeps the ids sequential and
+ * readable in the common case, and self-heals on the rare collision.
+ */
+async function createSyncJob(
+  db: PrismaClient,
+  data: { organizationId: string; emailAccountId: string; syncType: "INITIAL" | "INCREMENTAL"; triggeredById?: string },
+) {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const countToday = await db.emailProcessingJob.count({
-    where: { displayId: { startsWith: `SYNC-${today}` } },
-  });
-  return `SYNC-${today}-${String(countToday + 1).padStart(3, "0")}`;
+  for (let attempt = 0; attempt < MAX_DISPLAY_ID_RETRIES; attempt++) {
+    const countToday = await db.emailProcessingJob.count({ where: { displayId: { startsWith: `SYNC-${today}` } } });
+    const displayId = `SYNC-${today}-${String(countToday + 1 + attempt).padStart(3, "0")}`;
+    try {
+      return await db.emailProcessingJob.create({
+        data: {
+          displayId,
+          organizationId: data.organizationId,
+          emailAccountId: data.emailAccountId,
+          syncType: data.syncType,
+          status: "RUNNING",
+          triggeredById: data.triggeredById,
+          stage: PIPELINE_STAGES[0],
+          startedAt: new Date(),
+        },
+      });
+    } catch (err) {
+      if (isUniqueConstraintError(err) && attempt < MAX_DISPLAY_ID_RETRIES - 1) continue;
+      throw err;
+    }
+  }
+  throw new Error("Could not allocate a unique sync displayId after multiple attempts.");
 }
 
 function summarizeParticipants(message: EmailMessage): string {
@@ -88,6 +133,8 @@ interface IngestOutcome {
   emailId: string;
   threadId: string;
   isNew: boolean;
+  /** True for a brand-new message, or an existing one still worth attempting (PENDING, or PROCESSING_FAILED under MAX_PROCESSING_ATTEMPTS). False for an already-PROCESSED message, or one that exhausted its retries. */
+  shouldProcess: boolean;
 }
 
 /**
@@ -97,6 +144,10 @@ interface IngestOutcome {
  * metadata is persisted (filename/type/size) but content is never
  * downloaded in Phase 5A (spec §20) — storageRef records that explicitly
  * rather than pointing at a real object.
+ *
+ * An existing row isn't automatically "already handled" — a message that
+ * previously failed processing (PROCESSING_FAILED) is retried here rather
+ * than silently skipped forever, up to MAX_PROCESSING_ATTEMPTS.
  */
 async function ingestMessage(db: PrismaClient, accountId: string, jobId: string, message: EmailMessage): Promise<IngestOutcome> {
   const threadId = await upsertThread(db, accountId, message);
@@ -104,7 +155,12 @@ async function ingestMessage(db: PrismaClient, accountId: string, jobId: string,
   const existing = await db.email.findUnique({
     where: { threadId_providerMessageId: { threadId, providerMessageId: message.providerMessageId } },
   });
-  if (existing) return { emailId: existing.id, threadId, isNew: false };
+  if (existing) {
+    const retryable =
+      (existing.processingStatus === "PROCESSING_FAILED" || existing.processingStatus === "PENDING") &&
+      existing.processingAttempts < MAX_PROCESSING_ATTEMPTS;
+    return { emailId: existing.id, threadId, isNew: false, shouldProcess: retryable };
+  }
 
   const created = await db.email.create({
     data: {
@@ -134,19 +190,22 @@ async function ingestMessage(db: PrismaClient, accountId: string, jobId: string,
     });
   }
 
-  return { emailId: created.id, threadId, isNew: true };
+  return { emailId: created.id, threadId, isNew: true, shouldProcess: true };
 }
 
 /**
- * Runs (or resumes) a sync for one connected mailbox — the "Sync Now"
- * action (spec §26, §76-78). Guarded single-flight via
- * EmailAccount.activeSyncJobId; determines INITIAL vs. INCREMENTAL from
+ * Runs (or resumes) a sync for one connected mailbox — triggered either by
+ * a banker's "Sync Now" click (spec §26, §76-78) or, as of Phase 5B, the
+ * Vercel Cron scheduler (src/lib/email/scheduler.ts) calling accounts due
+ * for automatic incremental sync. Guarded single-flight via
+ * EmailAccount.activeSyncJobId — the same guard makes a manual click and a
+ * concurrent scheduled run race safely regardless of which one started
+ * first. Determines INITIAL vs. INCREMENTAL from
  * EmailAccount.initialSyncCompleted; fetches through the account's
  * EmailProvider; ingests and dedupes each message; hands every genuinely
- * new message to the unmodified Phase 3 processSingleEmail(); then runs the
- * same Phase 4 org-wide passes (inactivity/deadline) runScan() does, since
- * a real "Sync Now" click is the only tick this environment has (no
- * scheduler — spec §46).
+ * new (or retry-eligible) message to the unmodified Phase 3
+ * processSingleEmail(); then runs the same Phase 4 org-wide passes
+ * (inactivity/deadline) runScan() does.
  */
 export async function runAccountSync(accountId: string, triggeredById?: string): Promise<RunAccountSyncResult> {
   const db = getPrismaClient();
@@ -163,21 +222,10 @@ export async function runAccountSync(accountId: string, triggeredById?: string):
   }
 
   const syncType: "INITIAL" | "INCREMENTAL" = account.initialSyncCompleted ? "INCREMENTAL" : "INITIAL";
-  const displayId = await nextSyncDisplayId(db);
   const counters: ScanCounters = emptyScanCounters();
 
-  const job = await db.emailProcessingJob.create({
-    data: {
-      displayId,
-      organizationId: account.organizationId,
-      emailAccountId: account.id,
-      syncType,
-      status: "RUNNING",
-      triggeredById,
-      stage: PIPELINE_STAGES[0],
-      startedAt: new Date(),
-    },
-  });
+  const job = await createSyncJob(db, { organizationId: account.organizationId, emailAccountId: account.id, syncType, triggeredById });
+  const displayId = job.displayId;
 
   let messagesFetched = 0;
   let messagesFailed = 0;
@@ -228,14 +276,21 @@ export async function runAccountSync(accountId: string, triggeredById?: string):
           continue;
         }
 
-        if (!ingestOutcome.isNew) {
+        if (!ingestOutcome.isNew && !ingestOutcome.shouldProcess) {
+          // Either already PROCESSED, or PROCESSING_FAILED past
+          // MAX_PROCESSING_ATTEMPTS — a genuine duplicate/exhausted
+          // message, not just "not new" (spec §31: failed messages get a
+          // bounded number of retries, not zero and not infinite).
           messagesSkipped += 1;
           continue;
         }
 
         try {
           await setStage(db, job.id, PIPELINE_STAGES[2]);
-          await db.email.update({ where: { id: ingestOutcome.emailId }, data: { processingStatus: "PROCESSING", processingJobId: job.id } });
+          await db.email.update({
+            where: { id: ingestOutcome.emailId },
+            data: { processingStatus: "PROCESSING", processingJobId: job.id, processingAttempts: { increment: 1 } },
+          });
           const outcome = await processSingleEmail(
             db,
             account.organizationId,

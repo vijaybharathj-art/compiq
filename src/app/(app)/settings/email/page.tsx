@@ -32,6 +32,24 @@ function envConfigured(...names: string[]): boolean {
   return names.every((n) => Boolean(process.env[n]));
 }
 
+// Phase 5B (PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md §32-33) — "no successful
+// sync in this long" is the concrete, configurable trigger for surfacing
+// ACTION REQUIRED even when connectionStatus is still nominally CONNECTED
+// (a provider can silently stop returning new mail without ever tripping
+// an auth error). Independent of the scheduler's own sync cadence.
+const STALE_SYNC_HOURS = 24;
+
+function computeHealth(account: {
+  connectionStatus: "CONNECTED" | "NEEDS_REAUTH" | "DISCONNECTED";
+  lastSuccessfulSyncAt: Date | null;
+}): "HEALTHY" | "ACTION_REQUIRED" | "NEVER_SYNCED" | "DISCONNECTED" {
+  if (account.connectionStatus === "DISCONNECTED") return "DISCONNECTED";
+  if (account.connectionStatus === "NEEDS_REAUTH") return "ACTION_REQUIRED";
+  if (!account.lastSuccessfulSyncAt) return "NEVER_SYNCED";
+  const hoursSinceSuccess = (Date.now() - account.lastSuccessfulSyncAt.getTime()) / 3_600_000;
+  return hoursSinceSuccess > STALE_SYNC_HOURS ? "ACTION_REQUIRED" : "HEALTHY";
+}
+
 export default async function SettingsEmailPage({
   searchParams,
 }: {
@@ -74,6 +92,9 @@ export default async function SettingsEmailPage({
     },
   });
 
+  const schedulerEnabled = envConfigured("CRON_SECRET");
+  const syncIntervalMinutes = Number(process.env.EMAIL_SYNC_INTERVAL_MINUTES ?? 15);
+
   const cardData: EmailAccountCardData[] = accounts.map((a) => ({
     id: a.id,
     provider: a.provider,
@@ -84,6 +105,11 @@ export default async function SettingsEmailPage({
     initialSyncWindowDays: a.initialSyncWindowDays,
     lastSyncedAt: a.lastSyncedAt?.toISOString() ?? null,
     lastSuccessfulSyncAt: a.lastSuccessfulSyncAt?.toISOString() ?? null,
+    health: computeHealth(a),
+    nextScheduledSyncAt:
+      schedulerEnabled && a.connectionStatus === "CONNECTED" && a.lastSyncedAt
+        ? new Date(a.lastSyncedAt.getTime() + syncIntervalMinutes * 60_000).toISOString()
+        : null,
     recentJobs: a.syncJobs.map((j) => ({
       id: j.id,
       displayId: j.displayId,

@@ -374,13 +374,11 @@ Stated plainly, not silently dropped:
 
 - **Push notifications / webhooks** (Gmail `watch()`, Graph change
   subscriptions) — `watch()` throws on both providers today. Real-time
-  sync stays "Sync Now" (manual) or an external cron hitting a sync
-  endpoint, not a live push.
-- **A scheduler.** No cron/background worker triggers `runAccountSync()`
-  automatically. This is intentional for a Vercel-compatible deployment
-  this pass — see `ARCHITECTURE.md`'s decision log — but it does mean
-  incremental sync only happens when a banker (or an external scheduler
-  calling a to-be-built endpoint) triggers it.
+  sync stays poll-based (a Vercel Cron scheduler as of Phase 5B, or
+  manual "Sync Now"), not a live push.
+- ~~A scheduler.~~ **Shipped in Phase 5B** — a Vercel Cron job now calls
+  `runAccountSync()` automatically per connected account; see
+  `PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md`.
 - **Attachment content download.** Phase 5A is metadata-only by design
   (spec-mandated); actually fetching and storing attachment bytes,
   including a storage backend decision (S3-compatible object storage,

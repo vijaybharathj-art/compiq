@@ -26,6 +26,9 @@ export interface EmailAccountCardData {
   initialSyncWindowDays: number;
   lastSyncedAt: string | null;
   lastSuccessfulSyncAt: string | null;
+  health: "HEALTHY" | "ACTION_REQUIRED" | "NEVER_SYNCED" | "DISCONNECTED";
+  /** Null when the scheduler isn't configured (no CRON_SECRET) — automatic sync isn't running yet, Sync Now is still the only trigger. */
+  nextScheduledSyncAt: string | null;
   recentJobs: {
     id: string;
     displayId: string;
@@ -115,6 +118,8 @@ export function EmailAccountCard({ account }: { account: EmailAccountCardData })
       </CardHeader>
 
       <CardContent className="flex flex-col gap-4">
+        <HealthBanner health={account.health} />
+
         {account.connectionError && account.connectionStatus !== "CONNECTED" && (
           <p className="rounded-md border border-negative/30 bg-negative/10 px-3 py-2 text-xs text-negative">
             {account.connectionError}
@@ -128,6 +133,10 @@ export function EmailAccountCard({ account }: { account: EmailAccountCardData })
             value={account.lastSuccessfulSyncAt ? relativeTimeFromNow(account.lastSuccessfulSyncAt) : "Never"}
           />
           <Fact label="Initial sync" value={account.initialSyncCompleted ? "Complete" : "Not yet run"} />
+          <Fact
+            label="Next scheduled sync"
+            value={account.nextScheduledSyncAt ? formatDateTime(account.nextScheduledSyncAt) : "Not scheduled — use Sync Now"}
+          />
         </div>
 
         {!account.initialSyncCompleted && account.connectionStatus === "CONNECTED" && (
@@ -245,6 +254,32 @@ export function EmailAccountCard({ account }: { account: EmailAccountCardData })
         )}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Sync health (PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md §32-33) — a single,
+ * plain-language line answering "is this mailbox actually keeping up,"
+ * computed server-side (src/app/(app)/settings/email/page.tsx) from
+ * connectionStatus and how long it's been since the last *successful*
+ * sync, not just whether one is nominally scheduled.
+ */
+function HealthBanner({ health }: { health: EmailAccountCardData["health"] }) {
+  if (health === "DISCONNECTED") return null;
+  if (health === "NEVER_SYNCED") return null; // the initial-sync-window prompt below already covers this state
+  if (health === "HEALTHY") {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-positive/30 bg-positive/10 px-3 py-2 text-xs text-positive">
+        <CheckCircle2 className="size-3.5 shrink-0" />
+        Healthy — syncing normally.
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-md border border-negative/30 bg-negative/10 px-3 py-2 text-xs text-negative">
+      <AlertTriangle className="size-3.5 shrink-0" />
+      Action required — this mailbox hasn&apos;t synced successfully recently.
+    </div>
   );
 }
 

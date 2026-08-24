@@ -87,7 +87,9 @@ from one), `risks[]`, `valuationObservations[]`, `inactivityException?`
 
 Full pipeline behavior that reads/writes these tables:
 `PHASE3_EMAIL_INTELLIGENCE.md`. Real Gmail/Microsoft 365 connection and
-sync fields (Phase 5): `PHASE5_REAL_EMAIL_INTEGRATION.md`.
+sync fields (Phase 5): `PHASE5_REAL_EMAIL_INTEGRATION.md`. Automatic
+scheduled sync and per-message retry (Phase 5B):
+`PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md`.
 
 - **EmailAccount** — organizationId, userId, provider (`GMAIL |
   OUTLOOK`), emailAddress, connectionStatus (`CONNECTED | NEEDS_REAUTH |
@@ -108,7 +110,13 @@ sync fields (Phase 5): `PHASE5_REAL_EMAIL_INTEGRATION.md`.
   POSSIBLY_RELEVANT | NOT_RELEVANT`), relevanceScore, processingStatus
   (`PENDING | PROCESSING | PROCESSED | PROCESSING_FAILED` — Phase 3;
   `PENDING` is the "Run Scan" backlog), processingError?, processedAt?,
-  processingJobId?.
+  processingJobId?. *Phase 5B*: processingAttempts (Int, default 0) — how
+  many times the sync engine has attempted this message; a
+  `PROCESSING_FAILED` row is retried on the next sync up to
+  `MAX_PROCESSING_ATTEMPTS` (3, `src/lib/email/sync-engine.ts`), then left
+  alone rather than retried forever against a message that will never
+  succeed. Distinct from dedup: a message's `Email` row existing no longer
+  means "skip it," only `processingAttempts` reaching the cap does.
 - **EmailAttachment** — emailId, filename, mimeType, sizeBytes,
   storageRef.
 - **EmailParticipant** *(Phase 3)* — emailId, address, name?, role (`FROM |

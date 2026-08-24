@@ -36,6 +36,18 @@ market-moving information.
   Credentials-based demo login above. See
   `PHASE5_REAL_EMAIL_INTEGRATION.md` §1 for its CSRF/state-binding and
   account-linking defenses.
+- **The automatic incremental-sync scheduler is not a user-session route
+  at all** (Phase 5B — `src/app/api/cron/email-sync/route.ts`, invoked by
+  Vercel Cron per `vercel.json`). It authenticates by comparing an
+  `Authorization: Bearer <token>` header against `CRON_SECRET`, a
+  server-only environment variable never exposed to any client. The route
+  refuses to run at all (HTTP 500) if `CRON_SECRET` is unset — it never
+  falls back to "allow unauthenticated." `src/proxy.ts` excludes
+  `/api/cron` from the session gate for the same reason `/api/auth` is
+  excluded: it authenticates itself by a different mechanism than a user
+  session. See `PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md` for the full
+  design and `tests/unit/cron-email-sync.test.ts` for the auth-boundary
+  tests (missing secret, missing header, wrong secret, malformed header).
 
 ## 2. Authorization / organization isolation
 

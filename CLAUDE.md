@@ -26,6 +26,7 @@ banking workflows.
 | `PHASE4_DEAL_INTELLIGENCE.md` | The **live** Deal Intelligence layer — importance scoring, Risk/Inactivity/Valuation/Deadline/Momentum engines, Briefing engine, What Changed?, Client Attention |
 | `PHASE4_5_PRODUCTION_HARDENING.md` | The **live** trust layer, intelligence-first dashboard/UX polish, organization-isolation audit, AI-failure resilience — what shipped vs. deferred |
 | `PHASE5_REAL_EMAIL_INTEGRATION.md` | The **live** real Gmail + Microsoft 365 mailbox integration — OAuth, token security, the sync engine, Settings → Email — what shipped vs. Phase 5B |
+| `PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md` | The **live** automatic incremental-sync scheduler, per-message retry, and sync health/observability layer on top of Phase 5 — a real production OAuth connection and sync confirmed working during this phase, and what's still honestly untested from this sandbox |
 | `SECURITY.md` | Auth, data isolation, secrets, RBAC, audit policy |
 | `DESIGN_SYSTEM.md` | Visual language, tokens, component conventions |
 
@@ -43,8 +44,10 @@ banking workflows.
 - `EmailProvider` abstraction (`src/lib/email/`) — `DemoEmailProvider`
   (live, backed by the seeded mailbox) / `GmailProvider` /
   `MicrosoftGraphProvider` (live, real OAuth + REST clients — see
-  `PHASE5_REAL_EMAIL_INTEGRATION.md`; never live-tested against a real
-  mailbox in this sandboxed environment)
+  `PHASE5_REAL_EMAIL_INTEGRATION.md`; confirmed working against a real
+  Gmail account on a real production deployment during Phase 5B, though
+  this sandboxed development environment itself has never completed a
+  live OAuth handshake — see `PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md`)
 - `AIProvider` abstraction (`src/lib/ai/`) — `DemoAIProvider` (live,
   rule-based, drives the real email intelligence pipeline) / Anthropic /
   OpenAI (planned) — see `PHASE3_EMAIL_INTELLIGENCE.md`
@@ -140,13 +143,37 @@ Real email is bounded (30/90/180/365-day initial sync window, default 90,
 never unlimited), resumable, single-flight-guarded per account, and
 metadata-only for attachments in this phase. The doc also states plainly
 what's Phase 5B — push notifications/webhooks, a scheduler, attachment
-content download — and the one honest caveat that matters most: none of
-the real-provider code has ever completed a live OAuth handshake or synced
-a real mailbox in this sandboxed environment (no outbound network access,
-no registered OAuth app credentials here); what's verified is correctness
+content download — and the one honest caveat that mattered most at the
+time: none of the real-provider code had ever completed a live OAuth
+handshake or synced a real mailbox anywhere. **That caveat is now
+partially resolved** — see Phase 5B below, where a real Gmail account was
+connected and synced against a real production deployment (outside this
+sandbox). What's verified from inside this sandbox is still correctness
 against the documented API contracts plus a full synthetic/mocked test
 suite (`tests/fixtures/phase5-golden-emails.ts`,
 `tests/integration/phase5-sync-engine.test.ts`).
+
+## Phase 5B: production email operations is live
+
+`PHASE5B_PRODUCTION_EMAIL_OPERATIONS.md` documents what Phase 5 shipped as
+a manual, banker-triggered "Sync Now" flow becoming a real production
+operation: a Vercel Cron-triggered scheduler (`src/lib/email/
+scheduler.ts`, `/api/cron/email-sync`) that calls the exact same
+`runAccountSync()` Phase 5 already had, authenticated by a `CRON_SECRET`
+bearer token rather than a user session; a bounded per-message retry
+(`Email.processingAttempts`, capped, distinct from dedup) so one bad
+message no longer silently blocks a mailbox forever; a fix for a real
+concurrency race in sync-job id generation that the scheduler's own
+concurrent syncing made reachable for the first time; and a sync
+health/observability layer in Settings → Email (a plain-language
+healthy/action-required status, next-scheduled-sync time, sync history).
+It also documents the one thing that actually got live-verified this
+phase — a real Gmail account, connected and synced against the user's
+actual Vercel production deployment (`compiq-sand.vercel.app`), the first
+genuinely live confirmation of the Phase 5 code path — and states plainly
+what remains true only against synthetic/mocked tests from inside this
+sandbox: the scheduler's own Cron-triggered invocation, and everything
+about a second real provider (Microsoft/Outlook) or a large real mailbox.
 
 ## Working conventions
 
